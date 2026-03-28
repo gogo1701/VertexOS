@@ -26,10 +26,10 @@ Definition of done:
 - Faults print useful diagnostics instead of silent hangs
 
 ## Phase 2 - Memory Management
-- [ ] Physical Memory Manager (bitmap or stack of free frames)
-- [ ] Paging enabled (identity map kernel, guard critical regions)
-- [ ] Kernel heap allocator (kmalloc/kfree)
-- [ ] Memory map parsing and validation
+- [x] Physical Memory Manager (bitmap or stack of free frames)
+- [x] Paging enabled (identity map kernel, guard critical regions)
+- [x] Kernel heap allocator (kmalloc/kfree)
+- [x] Memory map parsing and validation
 
 Definition of done:
 - Kernel can allocate/free dynamic memory safely
@@ -112,7 +112,7 @@ Definition of done:
 
 ## Suggested Milestone Releases
 - [x] v0.1: Boot + interrupt-driven console + modular command system
-- [ ] v0.2: Paging + heap + stable kernel diagnostics
+- [x] v0.2: Paging + heap + stable kernel diagnostics
 - [ ] v0.3: Filesystem + VFS + persistent shell commands
 - [ ] v0.4: User programs + syscalls + process scheduler
 - [ ] v0.5: Networking basics + improved terminal

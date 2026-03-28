@@ -139,6 +139,19 @@ void display_print_num(u32 num, u32 base) {
     display_print(p);
 }
 
+void display_set_cursor(u32 row, u32 col) {
+    if (row >= VGA_HEIGHT) {
+        row = VGA_HEIGHT - 1;
+    }
+    if (col >= VGA_WIDTH) {
+        col = VGA_WIDTH - 1;
+    }
+
+    cursor_row = row;
+    cursor_col = col;
+    update_cursor();
+}
+
 void display_get_cursor(u32* row, u32* col) {
     *row = cursor_row;
     *col = cursor_col;

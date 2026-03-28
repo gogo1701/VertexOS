@@ -6,7 +6,11 @@ ORG 0x7C00
 
 KERNEL_SEGMENT   equ 0x1000
 KERNEL_OFFSET    equ 0x0000
-KERNEL_SECTORS   equ 32
+KERNEL_SECTORS   equ 64
+
+E820_BUFFER      equ 0x5000
+E820_COUNT_ADDR  equ 0x4FF0
+E820_MAX_ENTRIES equ 32
 
 CODE_SEG         equ 0x08
 DATA_SEG         equ 0x10
@@ -21,6 +25,8 @@ start:
     sti
 
     mov [boot_drive], dl
+
+    call detect_memory_map
 
     mov si, msg_loading
     call print_string
@@ -94,8 +100,44 @@ protected_mode:
     mov ss, ax
     mov esp, 0x90000
 
+    ; Pass boot memory info to kernel entry in registers.
+    mov ebx, E820_BUFFER
+    movzx ecx, word [E820_COUNT_ADDR]
+
     mov eax, KERNEL_SEGMENT * 16
     jmp eax
+
+BITS 16
+detect_memory_map:
+    pushad
+
+    xor ebx, ebx
+    xor bp, bp
+    mov di, E820_BUFFER
+
+.next_entry:
+    mov eax, 0xE820
+    mov edx, 0x534D4150
+    mov ecx, 20
+    int 0x15
+    jc .done
+
+    cmp eax, 0x534D4150
+    jne .done
+
+    inc bp
+    add di, 20
+
+    cmp bp, E820_MAX_ENTRIES
+    jae .done
+
+    cmp ebx, 0
+    jne .next_entry
+
+.done:
+    mov [E820_COUNT_ADDR], bp
+    popad
+    ret
 
 times 510 - ($ - $$) db 0
 dw 0xAA55

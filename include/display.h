@@ -47,6 +47,9 @@ void display_print(const char* s);
  */
 void display_print_num(u32 num, u32 base);
 
+/* Set cursor position explicitly (clamped to screen bounds). */
+void display_set_cursor(u32 row, u32 col);
+
 /*
  * Get current cursor position
  * 

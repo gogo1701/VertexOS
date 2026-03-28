@@ -8,9 +8,10 @@
 
 #define KB_BUFFER_SIZE 128
 
-static volatile char kb_buffer[KB_BUFFER_SIZE];
+static volatile s32 kb_buffer[KB_BUFFER_SIZE];
 static volatile u32 kb_head = 0;
 static volatile u32 kb_tail = 0;
+static volatile u8 kb_extended = 0;
 
 static u8 kb_buffer_is_empty(void) {
     return kb_head == kb_tail;
@@ -20,19 +21,19 @@ static u8 kb_buffer_is_full(void) {
     return ((kb_head + 1) % KB_BUFFER_SIZE) == kb_tail;
 }
 
-static void kb_buffer_push(char c) {
+static void kb_buffer_push(s32 key) {
     if (kb_buffer_is_full()) {
         return;
     }
 
-    kb_buffer[kb_head] = c;
+    kb_buffer[kb_head] = key;
     kb_head = (kb_head + 1) % KB_BUFFER_SIZE;
 }
 
-static char kb_buffer_pop(void) {
-    char c = kb_buffer[kb_tail];
+static s32 kb_buffer_pop(void) {
+    s32 key = kb_buffer[kb_tail];
     kb_tail = (kb_tail + 1) % KB_BUFFER_SIZE;
-    return c;
+    return key;
 }
 
 /*
@@ -68,37 +69,70 @@ static char scancode_to_ascii(u8 scancode) {
 void keyboard_init(void) {
     kb_head = 0;
     kb_tail = 0;
+    kb_extended = 0;
 }
 
 void keyboard_irq_handler(void) {
     u8 scancode;
-    char c;
+    s32 key = 0;
 
     /* Read keyboard scancode from data port. */
     scancode = io_inb(0x60);
+
+    if (scancode == 0xE0) {
+        kb_extended = 1;
+        return;
+    }
+
+    if (kb_extended) {
+        if (!(scancode & 0x80)) {
+            if (scancode == 0x4B) {
+                key = KEY_LEFT;
+            } else if (scancode == 0x4D) {
+                key = KEY_RIGHT;
+            } else if (scancode == 0x53) {
+                key = KEY_DELETE;
+            }
+        }
+
+        kb_extended = 0;
+        if (key) {
+            kb_buffer_push(key);
+        }
+        return;
+    }
 
     /* Ignore key-release events. */
     if (scancode & 0x80) {
         return;
     }
 
-    c = scancode_to_ascii(scancode);
-    if (c) {
-        kb_buffer_push(c);
+    key = (s32)scancode_to_ascii(scancode);
+    if (key) {
+        kb_buffer_push(key);
     }
 }
 
-char keyboard_read_char(void) {
+s32 keyboard_read_key(void) {
     for (;;) {
         interrupts_disable();
         if (!kb_buffer_is_empty()) {
-            char c = kb_buffer_pop();
+            s32 key = kb_buffer_pop();
             interrupts_enable();
-            return c;
+            return key;
         }
         interrupts_enable();
 
         /* Sleep until an IRQ wakes the CPU. */
         interrupts_halt();
+    }
+}
+
+char keyboard_read_char(void) {
+    for (;;) {
+        s32 key = keyboard_read_key();
+        if (key >= 0 && key <= 0xFF) {
+            return (char)key;
+        }
     }
 }

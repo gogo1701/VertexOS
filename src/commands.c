@@ -4,7 +4,9 @@
 
 #include "commands.h"
 #include "display.h"
+#include "heap.h"
 #include "panic.h"
+#include "pmm.h"
 #include "pit.h"
 
 static u8 strings_equal(const char* a, const char* b) {
@@ -34,6 +36,8 @@ static void cmd_clear(const char* args);
 static void cmd_echo(const char* args);
 static void cmd_uptime(const char* args);
 static void cmd_panic(const char* args);
+static void cmd_meminfo(const char* args);
+static void cmd_alloc(const char* args);
 
 u8 command_register(const char* name, command_func func) {
     u32 i;
@@ -178,10 +182,79 @@ static void cmd_panic(const char* args) {
     panic("Manual panic command invoked");
 }
 
+/*
+ * meminfo - Display PMM and heap usage stats
+ */
+static void cmd_meminfo(const char* args) {
+    u32 total;
+    u32 used;
+    u32 free;
+    u32 heap_total;
+    u32 heap_used;
+
+    (void)args;
+
+    total = pmm_total_memory_bytes();
+    used = pmm_used_memory_bytes();
+    free = pmm_free_memory_bytes();
+    heap_total = heap_total_bytes();
+    heap_used = heap_used_bytes();
+
+    display_print("PMM total: ");
+    display_print_num(total / 1024u, 10);
+    display_print(" KiB\n");
+
+    display_print("PMM used : ");
+    display_print_num(used / 1024u, 10);
+    display_print(" KiB\n");
+
+    display_print("PMM free : ");
+    display_print_num(free / 1024u, 10);
+    display_print(" KiB\n");
+
+    display_print("Heap total: ");
+    display_print_num(heap_total / 1024u, 10);
+    display_print(" KiB\n");
+
+    display_print("Heap used : ");
+    display_print_num(heap_used / 1024u, 10);
+    display_print(" KiB\n");
+}
+
+/*
+ * alloc - Simple kmalloc/kfree self-test
+ */
+static void cmd_alloc(const char* args) {
+    void* a;
+    void* b;
+
+    (void)args;
+
+    a = kmalloc(64);
+    b = kmalloc(128);
+
+    if (!a || !b) {
+        display_print("alloc test failed\n");
+        return;
+    }
+
+    display_print("alloc ok: a=0x");
+    display_print_num((u32)a, 16);
+    display_print(" b=0x");
+    display_print_num((u32)b, 16);
+    display_put_char('\n');
+
+    kfree(a);
+    kfree(b);
+    display_print("alloc free ok\n");
+}
+
 void commands_init(void) {
     command_register("help", cmd_help);
     command_register("clear", cmd_clear);
     command_register("echo", cmd_echo);
     command_register("uptime", cmd_uptime);
     command_register("panic", cmd_panic);
+    command_register("meminfo", cmd_meminfo);
+    command_register("alloc", cmd_alloc);
 }

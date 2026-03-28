@@ -6,14 +6,14 @@ QEMU=/usr/bin/qemu-system-i386
 
 CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2 -Iinclude
 LDFLAGS=-m elf_i386 -nostdlib -T boot/kernel.ld
-MAX_KERNEL_BYTES=16384
+MAX_KERNEL_BYTES=32768
 
 BUILD=build
 SRC_DIR=src
 BOOT_DIR=boot
 
 # Source files
-C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c interrupts.c pic.c pit.c panic.c)
+C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c interrupts.c pic.c pit.c panic.c bootinfo.c pmm.c paging.c heap.c)
 C_OBJECTS=$(notdir $(C_SOURCES:.c=.o))
 C_OBJECTS_BUILD=$(addprefix $(BUILD)/,$(C_OBJECTS))
 
