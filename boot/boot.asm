@@ -26,6 +26,18 @@ start:
 
     mov [boot_drive], dl
 
+    cmp byte [video_mode_pref], 1
+    jne .set_text_mode
+    mov ax, 0x0013
+    int 0x10
+    jmp .video_mode_done
+
+.set_text_mode:
+    mov ax, 0x0003
+    int 0x10
+
+.video_mode_done:
+
     call detect_memory_map
 
     mov si, msg_loading
@@ -103,6 +115,7 @@ protected_mode:
     ; Pass boot memory info to kernel entry in registers.
     mov ebx, E820_BUFFER
     movzx ecx, word [E820_COUNT_ADDR]
+    movzx edx, byte [video_mode_pref]
 
     mov eax, KERNEL_SEGMENT * 16
     jmp eax
@@ -139,5 +152,7 @@ detect_memory_map:
     popad
     ret
 
-times 510 - ($ - $$) db 0
+times 508 - ($ - $$) db 0
+video_mode_pref db 0
+boot_flags db 0
 dw 0xAA55

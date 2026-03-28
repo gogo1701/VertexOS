@@ -93,6 +93,10 @@ void keyboard_irq_handler(void) {
                 key = KEY_RIGHT;
             } else if (scancode == 0x53) {
                 key = KEY_DELETE;
+            } else if (scancode == 0x48) {
+                key = KEY_UP;
+            } else if (scancode == 0x50) {
+                key = KEY_DOWN;
             }
         }
 

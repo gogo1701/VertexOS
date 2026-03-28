@@ -17,7 +17,7 @@ BOOT_DIR=boot
 USER_DIR=user
 
 # Source files
-C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c interrupts.c pic.c pit.c panic.c bootinfo.c pmm.c paging.c heap.c scheduler.c syscall.c ata.c blockdev.c simplefs.c vfs.c exec.c userland.c)
+C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c interrupts.c pic.c pit.c panic.c power.c bootinfo.c pmm.c paging.c heap.c scheduler.c syscall.c ata.c blockdev.c simplefs.c vfs.c exec.c userland.c serial.c rtc.c framebuffer.c video.c)
 C_OBJECTS=$(notdir $(C_SOURCES:.c=.o))
 C_OBJECTS_BUILD=$(addprefix $(BUILD)/,$(C_OBJECTS))
 

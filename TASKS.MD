@@ -71,10 +71,10 @@ Definition of done:
 - Error messages are understandable and consistent
 
 ## Phase 6 - Device and Console Improvements
-- [ ] Better terminal (line editing, history, tab completion)
-- [ ] Serial logging (COM1) for debug output
-- [ ] RTC/clock readout
-- [ ] Optional: basic graphics mode and framebuffer text
+- [x] Better terminal (line editing, history, tab completion)
+- [x] Serial logging (COM1) for debug output
+- [x] RTC/clock readout
+- [x] Optional: basic graphics mode and framebuffer text
 
 Definition of done:
 - Debugging works via serial even when VGA fails

@@ -19,7 +19,9 @@
 #include "paging.h"
 #include "pmm.h"
 #include "scheduler.h"
+#include "serial.h"
 #include "userland.h"
+#include "video.h"
 #include "vfs.h"
 
 extern u8 _kernel_start;
@@ -52,11 +54,13 @@ static void idle_task(void* arg) {
  * Initializes subsystems and runs the command-line interface.
  * This function never returns in normal operation.
  */
-void kmain(const e820_entry* e820_map, u32 e820_count) {
+void kmain(u32 boot_video_mode, const e820_entry* e820_map, u32 e820_count) {
     memory_region regions[E820_MAX_ENTRIES];
     u32 region_count;
 
     /* Initialize subsystems */
+    serial_init();
+    video_init((video_mode)boot_video_mode);
     display_init();
     region_count = bootinfo_get_usable_regions(
         e820_map,

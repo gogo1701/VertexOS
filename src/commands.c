@@ -9,8 +9,11 @@
 #include "panic.h"
 #include "pmm.h"
 #include "pit.h"
+#include "power.h"
+#include "rtc.h"
 #include "scheduler.h"
 #include "syscall.h"
+#include "video.h"
 #include "vfs.h"
 
 typedef struct {
@@ -27,7 +30,10 @@ static void cmd_help(const char* args);
 static void cmd_clear(const char* args);
 static void cmd_echo(const char* args);
 static void cmd_uptime(const char* args);
+static void cmd_time(const char* args);
 static void cmd_panic(const char* args);
+static void cmd_restart(const char* args);
+static void cmd_shutdown(const char* args);
 static void cmd_meminfo(const char* args);
 static void cmd_alloc(const char* args);
 static void cmd_tasks(const char* args);
@@ -44,6 +50,7 @@ static void cmd_mv(const char* args);
 static void cmd_cd(const char* args);
 static void cmd_pwd(const char* args);
 static void cmd_exec(const char* args);
+static void cmd_video(const char* args);
 
 static u8 strings_equal(const char* a, const char* b) {
     while (*a && *b) {
@@ -184,6 +191,13 @@ u32 command_count(void) {
     return command_count_val;
 }
 
+const char* command_name_at(u32 index) {
+    if (index >= command_count_val) {
+        return 0;
+    }
+    return commands[index].name;
+}
+
 static u8 copy_file(const char* src, const char* dst) {
     s32 in_fd;
     s32 out_fd;
@@ -297,11 +311,54 @@ static void cmd_uptime(const char* args) {
     display_print(" seconds\n");
 }
 
+static void print_2digit(u8 v) {
+    if (v < 10) {
+        display_put_char('0');
+    }
+    display_print_num(v, 10);
+}
+
+static void cmd_time(const char* args) {
+    rtc_datetime dt;
+    (void)args;
+
+    if (!rtc_read_datetime(&dt)) {
+        display_print("time: rtc read failed\n");
+        return;
+    }
+
+    display_print("20");
+    print_2digit(dt.year);
+    display_put_char('-');
+    print_2digit(dt.month);
+    display_put_char('-');
+    print_2digit(dt.day);
+    display_put_char(' ');
+    print_2digit(dt.hour);
+    display_put_char(':');
+    print_2digit(dt.minute);
+    display_put_char(':');
+    print_2digit(dt.second);
+    display_put_char('\n');
+}
+
 static void cmd_panic(const char* args) {
     if (args && *args) {
         panic(args);
     }
     panic("Manual panic command invoked");
+}
+
+static void cmd_restart(const char* args) {
+    (void)args;
+    display_print("Restarting system...\n");
+    power_restart();
+}
+
+static void cmd_shutdown(const char* args) {
+    (void)args;
+    display_print("Shutting down system...\n");
+    power_shutdown();
 }
 
 static void cmd_meminfo(const char* args) {
@@ -598,12 +655,83 @@ static void cmd_exec(const char* args) {
     }
 }
 
+static void cmd_video(const char* args) {
+    char mode[16];
+    char subarg[16];
+    video_mode pref;
+
+    if (!read_arg(&args, mode, sizeof(mode)) || !mode[0] || strings_equal(mode, "status")) {
+        display_print("video current: ");
+        display_print(video_mode_name(video_get_mode()));
+        display_put_char('\n');
+
+        if (video_get_boot_preference(&pref)) {
+            display_print("video next boot: ");
+            display_print(video_mode_name(pref));
+            display_put_char('\n');
+        }
+        return;
+    }
+
+    if (strings_equal(mode, "test")) {
+        if (video_get_mode() != VIDEO_MODE_GRAPHICS) {
+            display_print("video test: boot into graphics mode first\n");
+            return;
+        }
+
+        if (!read_arg(&args, subarg, sizeof(subarg)) || !subarg[0] || strings_equal(subarg, "status")) {
+            display_print("video test: ");
+            display_print(display_get_graphics_test_overlay() ? "on" : "off");
+            display_put_char('\n');
+            return;
+        }
+
+        if (strings_equal(subarg, "on")) {
+            display_set_graphics_test_overlay(1);
+            display_print("video test: on\n");
+            return;
+        }
+
+        if (strings_equal(subarg, "off")) {
+            display_set_graphics_test_overlay(0);
+            display_print("video test: off\n");
+            return;
+        }
+
+        display_print("Usage: video test [on|off|status]\n");
+        return;
+    }
+
+    if (strings_equal(mode, "text")) {
+        if (!video_set_boot_preference(VIDEO_MODE_TEXT)) {
+            display_print("video: save failed\n");
+            return;
+        }
+        display_print("video: text saved for next boot\n");
+        return;
+    }
+
+    if (strings_equal(mode, "gfx") || strings_equal(mode, "graphics")) {
+        if (!video_set_boot_preference(VIDEO_MODE_GRAPHICS)) {
+            display_print("video: save failed\n");
+            return;
+        }
+        display_print("video: graphics saved for next boot\n");
+        return;
+    }
+
+    display_print("Usage: video [status|text|gfx|test]\n");
+}
+
 void commands_init(void) {
     command_register_full("help", "help [command]", "Show command list or command help", cmd_help);
     command_register_full("clear", "clear", "Clear the screen", cmd_clear);
     command_register_full("echo", "echo [text]", "Print text (quotes supported)", cmd_echo);
     command_register_full("uptime", "uptime", "Show kernel uptime", cmd_uptime);
+    command_register_full("time", "time", "Show RTC date/time", cmd_time);
     command_register_full("panic", "panic [message]", "Trigger kernel panic", cmd_panic);
+    command_register_full("restart", "restart", "Reset the machine", cmd_restart);
+    command_register_full("shutdown", "shutdown", "Power off the machine", cmd_shutdown);
     command_register_full("meminfo", "meminfo", "Show PMM and heap usage", cmd_meminfo);
     command_register_full("alloc", "alloc", "Run basic allocator self-test", cmd_alloc);
     command_register_full("tasks", "tasks", "Show scheduler task state summary", cmd_tasks);
@@ -620,4 +748,5 @@ void commands_init(void) {
     command_register_full("cd", "cd [path]", "Change current directory", cmd_cd);
     command_register_full("pwd", "pwd", "Print current directory", cmd_pwd);
     command_register_full("exec", "exec <elf-path>", "Load and run 32-bit ELF from disk", cmd_exec);
+    command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
 }

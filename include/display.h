@@ -24,6 +24,9 @@ void display_init(void);
  * Clear the entire screen and reset cursor
  */
 void display_clear(void);
+void display_refresh(void);
+void display_set_graphics_test_overlay(u8 enabled);
+u8 display_get_graphics_test_overlay(void);
 
 /*
  * Display a single character, handling special characters

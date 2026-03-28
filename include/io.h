@@ -29,4 +29,14 @@ static inline void io_outb(u16 port, u8 value) {
     __asm__ __volatile__("outb %0, %1" : : "a"(value), "Nd"(port));
 }
 
+/*
+ * Write a 16-bit value to an I/O port
+ *
+ * @port: The I/O port address to write to
+ * @value: The 16-bit value to write
+ */
+static inline void io_outw(u16 port, u16 value) {
+    __asm__ __volatile__("outw %0, %1" : : "a"(value), "Nd"(port));
+}
+
 #endif /* IO_H */

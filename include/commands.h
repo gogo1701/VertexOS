@@ -38,6 +38,7 @@ u8 command_execute(const char* input);
  * @return: Number of commands currently registered
  */
 u32 command_count(void);
+const char* command_name_at(u32 index);
 
 /*
  * Initialize built-in commands

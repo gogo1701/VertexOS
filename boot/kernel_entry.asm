@@ -12,10 +12,11 @@ _start:
     ; 0x9FC00 is selected as a safe memory location below the 640KB limit
     mov esp, 0x9FC00
     
-    ; Pass BIOS E820 map pointer/count from bootloader.
-    ; cdecl: push args right-to-left -> (map_ptr, map_count)
+    ; Pass boot video mode and BIOS E820 map pointer/count from bootloader.
+    ; cdecl: push args right-to-left -> (boot_video_mode, map_ptr, map_count)
     push ecx
     push ebx
+    push edx
     call kmain
 
 ; Infinite loop if main function returns (shouldn't happen normally)

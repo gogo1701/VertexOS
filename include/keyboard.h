@@ -12,6 +12,8 @@
 #define KEY_LEFT   0x100
 #define KEY_RIGHT  0x101
 #define KEY_DELETE 0x102
+#define KEY_UP     0x103
+#define KEY_DOWN   0x104
 
 /* Initialize keyboard state used by IRQ-driven buffering. */
 void keyboard_init(void);
