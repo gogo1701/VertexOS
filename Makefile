@@ -10,11 +10,6 @@ MAX_KERNEL_BYTES=4096
 
 BUILD=build
 
-# Source files
-C_SOURCES=kernel.c display.c keyboard.c commands.c
-C_OBJECTS=$(C_SOURCES:.c=.o)
-C_OBJECTS_BUILD=$(addprefix $(BUILD)/,$(C_OBJECTS))
-
 all: $(BUILD)/os-image.bin
 
 $(BUILD):
@@ -26,11 +21,11 @@ $(BUILD)/boot.bin: boot.asm | $(BUILD)
 $(BUILD)/kernel_entry.o: kernel_entry.asm | $(BUILD)
 	$(ASM) -f elf32 kernel_entry.asm -o $(BUILD)/kernel_entry.o
 
-$(BUILD)/%.o: %.c | $(BUILD)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(BUILD)/kernel.o: kernel.c | $(BUILD)
+	$(CC) $(CFLAGS) -c kernel.c -o $(BUILD)/kernel.o
 
-$(BUILD)/kernel.elf: $(BUILD)/kernel_entry.o $(C_OBJECTS_BUILD) kernel.ld
-	$(LD) $(LDFLAGS) -o $(BUILD)/kernel.elf $(BUILD)/kernel_entry.o $(C_OBJECTS_BUILD)
+$(BUILD)/kernel.elf: $(BUILD)/kernel_entry.o $(BUILD)/kernel.o kernel.ld
+	$(LD) $(LDFLAGS) -o $(BUILD)/kernel.elf $(BUILD)/kernel_entry.o $(BUILD)/kernel.o
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary $(BUILD)/kernel.elf $(BUILD)/kernel.bin
