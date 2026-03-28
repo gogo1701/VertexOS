@@ -9,6 +9,12 @@
 
 #include "types.h"
 
+/* Initialize keyboard state used by IRQ-driven buffering. */
+void keyboard_init(void);
+
+/* IRQ1 handler entrypoint called from interrupt dispatcher. */
+void keyboard_irq_handler(void);
+
 /*
  * Read a character from the keyboard (blocking)
  * 

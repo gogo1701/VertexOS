@@ -13,6 +13,7 @@
 #include "keyboard.h"
 #include "commands.h"
 #include "cli.h"
+#include "interrupts.h"
 
 /* ============================
  * Main Kernel Entry Point
@@ -27,6 +28,8 @@
 void kmain(void) {
     /* Initialize subsystems */
     display_init();
+    keyboard_init();
+    interrupts_init();
     commands_init();
 
     /* Display welcome message */

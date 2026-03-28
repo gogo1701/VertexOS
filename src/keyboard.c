@@ -3,7 +3,37 @@
  */
 
 #include "keyboard.h"
+#include "interrupts.h"
 #include "io.h"
+
+#define KB_BUFFER_SIZE 128
+
+static volatile char kb_buffer[KB_BUFFER_SIZE];
+static volatile u32 kb_head = 0;
+static volatile u32 kb_tail = 0;
+
+static u8 kb_buffer_is_empty(void) {
+    return kb_head == kb_tail;
+}
+
+static u8 kb_buffer_is_full(void) {
+    return ((kb_head + 1) % KB_BUFFER_SIZE) == kb_tail;
+}
+
+static void kb_buffer_push(char c) {
+    if (kb_buffer_is_full()) {
+        return;
+    }
+
+    kb_buffer[kb_head] = c;
+    kb_head = (kb_head + 1) % KB_BUFFER_SIZE;
+}
+
+static char kb_buffer_pop(void) {
+    char c = kb_buffer[kb_tail];
+    kb_tail = (kb_tail + 1) % KB_BUFFER_SIZE;
+    return c;
+}
 
 /*
  * Convert PS/2 keyboard scancode to ASCII character
@@ -35,35 +65,40 @@ static char scancode_to_ascii(u8 scancode) {
     return 0;  /* Invalid or key-release scancode */
 }
 
-/*
- * Wait for and read a keyboard scancode
- */
-static u8 read_scancode_blocking(void) {
-    for (;;) {
-        /* Poll port 0x64: bit 0 indicates data available */
-        if (io_inb(0x64) & 1) {
-            /* Data ready: read byte from port 0x60 (keyboard data port) */
-            return io_inb(0x60);
-        }
+void keyboard_init(void) {
+    kb_head = 0;
+    kb_tail = 0;
+}
+
+void keyboard_irq_handler(void) {
+    u8 scancode;
+    char c;
+
+    /* Read keyboard scancode from data port. */
+    scancode = io_inb(0x60);
+
+    /* Ignore key-release events. */
+    if (scancode & 0x80) {
+        return;
+    }
+
+    c = scancode_to_ascii(scancode);
+    if (c) {
+        kb_buffer_push(c);
     }
 }
 
 char keyboard_read_char(void) {
     for (;;) {
-        u8 scancode = read_scancode_blocking();
-        char c;
-
-        /* Ignore key-release events (scancode with high bit set) */
-        if (scancode & 0x80) {
-            continue;
-        }
-
-        /* Convert scancode to ASCII character */
-        c = scancode_to_ascii(scancode);
-        
-        /* Skip unmapped scancodes (like Ctrl, Shift, Alt) */
-        if (c) {
+        interrupts_disable();
+        if (!kb_buffer_is_empty()) {
+            char c = kb_buffer_pop();
+            interrupts_enable();
             return c;
         }
+        interrupts_enable();
+
+        /* Sleep until an IRQ wakes the CPU. */
+        interrupts_halt();
     }
 }

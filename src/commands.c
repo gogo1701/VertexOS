@@ -4,6 +4,8 @@
 
 #include "commands.h"
 #include "display.h"
+#include "panic.h"
+#include "pit.h"
 
 static u8 strings_equal(const char* a, const char* b) {
     while (*a && *b) {
@@ -30,6 +32,8 @@ static u32 command_count_val = 0;
 static void cmd_help(const char* args);
 static void cmd_clear(const char* args);
 static void cmd_echo(const char* args);
+static void cmd_uptime(const char* args);
+static void cmd_panic(const char* args);
 
 u8 command_register(const char* name, command_func func) {
     u32 i;
@@ -134,8 +138,50 @@ static void cmd_echo(const char* args) {
     display_put_char('\n');
 }
 
+/*
+ * uptime - Print uptime derived from PIT timer ticks
+ */
+static void cmd_uptime(const char* args) {
+    u32 ticks;
+    u32 hz;
+    u32 seconds;
+    u32 centiseconds;
+
+    (void)args;
+
+    ticks = pit_get_ticks();
+    hz = pit_get_frequency();
+    if (hz == 0) {
+        hz = 1;
+    }
+
+    seconds = ticks / hz;
+    centiseconds = ((ticks % hz) * 100u) / hz;
+
+    display_print("Uptime: ");
+    display_print_num(seconds, 10);
+    display_put_char('.');
+    if (centiseconds < 10) {
+        display_put_char('0');
+    }
+    display_print_num(centiseconds, 10);
+    display_print(" seconds\n");
+}
+
+/*
+ * panic - Trigger a kernel panic for testing diagnostics
+ */
+static void cmd_panic(const char* args) {
+    if (args && *args) {
+        panic(args);
+    }
+    panic("Manual panic command invoked");
+}
+
 void commands_init(void) {
     command_register("help", cmd_help);
     command_register("clear", cmd_clear);
     command_register("echo", cmd_echo);
+    command_register("uptime", cmd_uptime);
+    command_register("panic", cmd_panic);
 }

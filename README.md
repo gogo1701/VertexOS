@@ -118,7 +118,15 @@ C_SOURCES=kernel.c display.c keyboard.c commands.c mymodule.c
   
 - **keyboard.c** - PS/2 keyboard input
   - Scancode-to-ASCII conversion (US layout)
-  - Polling-based input
+  - IRQ-driven buffered input (no busy-poll loop)
+
+- **interrupts.c / interrupts.asm / pic.c / pit.c** - Core IRQ subsystem
+  - IDT setup with timer and keyboard IRQ gates
+  - PIC remap + IRQ masking helpers
+  - PIT fixed-rate timer ticks
+
+- **panic.c** - Kernel panic and assert diagnostics
+  - Fatal error output with halt path
 
 - **commands.c** - Command registry & execution
   - Simple registration system (max 16 commands)

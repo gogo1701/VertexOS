@@ -6,7 +6,7 @@ ORG 0x7C00
 
 KERNEL_SEGMENT   equ 0x1000
 KERNEL_OFFSET    equ 0x0000
-KERNEL_SECTORS   equ 8
+KERNEL_SECTORS   equ 32
 
 CODE_SEG         equ 0x08
 DATA_SEG         equ 0x10

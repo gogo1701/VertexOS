@@ -6,14 +6,14 @@ QEMU=/usr/bin/qemu-system-i386
 
 CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2 -Iinclude
 LDFLAGS=-m elf_i386 -nostdlib -T boot/kernel.ld
-MAX_KERNEL_BYTES=4096
+MAX_KERNEL_BYTES=16384
 
 BUILD=build
 SRC_DIR=src
 BOOT_DIR=boot
 
 # Source files
-C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c)
+C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c interrupts.c pic.c pit.c panic.c)
 C_OBJECTS=$(notdir $(C_SOURCES:.c=.o))
 C_OBJECTS_BUILD=$(addprefix $(BUILD)/,$(C_OBJECTS))
 
@@ -28,11 +28,14 @@ $(BUILD)/boot.bin: $(BOOT_DIR)/boot.asm | $(BUILD)
 $(BUILD)/kernel_entry.o: $(BOOT_DIR)/kernel_entry.asm | $(BUILD)
 	$(ASM) -f elf32 $(BOOT_DIR)/kernel_entry.asm -o $(BUILD)/kernel_entry.o
 
+$(BUILD)/irq_stubs.o: $(BOOT_DIR)/interrupts.asm | $(BUILD)
+	$(ASM) -f elf32 $(BOOT_DIR)/interrupts.asm -o $(BUILD)/irq_stubs.o
+
 $(BUILD)/%.o: $(SRC_DIR)/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kernel_entry.o $(C_OBJECTS_BUILD) $(BOOT_DIR)/kernel.ld
-	$(LD) $(LDFLAGS) -o $(BUILD)/kernel.elf $(BUILD)/kernel_entry.o $(C_OBJECTS_BUILD)
+$(BUILD)/kernel.elf: $(BUILD)/kernel_entry.o $(BUILD)/irq_stubs.o $(C_OBJECTS_BUILD) $(BOOT_DIR)/kernel.ld
+	$(LD) $(LDFLAGS) -o $(BUILD)/kernel.elf $(BUILD)/kernel_entry.o $(BUILD)/irq_stubs.o $(C_OBJECTS_BUILD)
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary $(BUILD)/kernel.elf $(BUILD)/kernel.bin

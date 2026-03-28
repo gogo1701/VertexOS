@@ -14,11 +14,11 @@ Definition of done:
 - Core modules separated and documented
 
 ## Phase 1 - Reliable Kernel Core
-- [ ] Interrupt Descriptor Table (IDT) setup
-- [ ] Programmable Interrupt Controller (PIC) remap and masking helpers
-- [ ] Timer (PIT) interrupt at fixed tick rate
-- [ ] Keyboard interrupt driver (replace polling)
-- [ ] Basic panic/assert path with error output
+- [x] Interrupt Descriptor Table (IDT) setup
+- [x] Programmable Interrupt Controller (PIC) remap and masking helpers
+- [x] Timer (PIT) interrupt at fixed tick rate
+- [x] Keyboard interrupt driver (replace polling)
+- [x] Basic panic/assert path with error output
 
 Definition of done:
 - Keyboard input works entirely via interrupts
@@ -111,17 +111,17 @@ Definition of done:
 - Core subsystems support future scaling
 
 ## Suggested Milestone Releases
-- [ ] v0.1: Boot + interrupt-driven console + modular command system
+- [x] v0.1: Boot + interrupt-driven console + modular command system
 - [ ] v0.2: Paging + heap + stable kernel diagnostics
 - [ ] v0.3: Filesystem + VFS + persistent shell commands
 - [ ] v0.4: User programs + syscalls + process scheduler
 - [ ] v0.5: Networking basics + improved terminal
 
 ## Immediate Next 2 Weeks (practical sprint)
-- [ ] Refactor into clean folders and module boundaries
-- [ ] Finish clean command system with registration table and parser cleanup
-- [ ] Implement IDT + PIC remap + keyboard IRQ handler
-- [ ] Add timer tick and uptime command
+- [x] Refactor into clean folders and module boundaries
+- [x] Finish clean command system with registration table and parser cleanup
+- [x] Implement IDT + PIC remap + keyboard IRQ handler
+- [x] Add timer tick and uptime command
 - [ ] Start block device abstraction skeleton for filesystem work
 
 ## Success Criteria for a "Useful OS"
