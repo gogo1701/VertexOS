@@ -1,0 +1,4 @@
+- [x] Working Bootloader
+- [x] Basic command input
+- [ ] Working clean command system
+- [ ] File System
