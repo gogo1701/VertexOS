@@ -4,7 +4,15 @@ LD=ld
 OBJCOPY=objcopy
 QEMU=/usr/bin/qemu-system-i386
 
-CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2 -Iinclude
+CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2 \
+       -Iinclude \
+       -Iinclude/core \
+       -Iinclude/drivers \
+       -Iinclude/fs \
+       -Iinclude/mem \
+       -Iinclude/task \
+       -Iinclude/video \
+       -Iinclude/exec
 CFLAGS_USER=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2
 LDFLAGS=-m elf_i386 -nostdlib -T boot/kernel.ld
 LDFLAGS_USER=-m elf_i386 -nostdlib -T user/user.ld
@@ -16,8 +24,16 @@ SRC_DIR=src
 BOOT_DIR=boot
 USER_DIR=user
 
-# Source files
-C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c interrupts.c pic.c pit.c panic.c power.c bootinfo.c pmm.c paging.c heap.c scheduler.c syscall.c ata.c blockdev.c simplefs.c vfs.c exec.c userland.c serial.c rtc.c framebuffer.c video.c)
+# Source files grouped by subsystem
+CORE_SRCS  = $(addprefix $(SRC_DIR)/core/,    kernel.c cli.c commands.c panic.c)
+DRIVER_SRCS= $(addprefix $(SRC_DIR)/drivers/, ata.c blockdev.c interrupts.c keyboard.c pic.c pit.c power.c rtc.c serial.c)
+FS_SRCS    = $(addprefix $(SRC_DIR)/fs/,      simplefs.c vfs.c)
+MEM_SRCS   = $(addprefix $(SRC_DIR)/mem/,     bootinfo.c heap.c paging.c pmm.c)
+TASK_SRCS  = $(addprefix $(SRC_DIR)/task/,    scheduler.c syscall.c)
+VIDEO_SRCS = $(addprefix $(SRC_DIR)/video/,   display.c framebuffer.c video.c)
+EXEC_SRCS  = $(addprefix $(SRC_DIR)/exec/,    exec.c userland.c)
+
+C_SOURCES=$(CORE_SRCS) $(DRIVER_SRCS) $(FS_SRCS) $(MEM_SRCS) $(TASK_SRCS) $(VIDEO_SRCS) $(EXEC_SRCS)
 C_OBJECTS=$(notdir $(C_SOURCES:.c=.o))
 C_OBJECTS_BUILD=$(addprefix $(BUILD)/,$(C_OBJECTS))
 
@@ -45,7 +61,25 @@ $(BUILD)/user/hello.elf: $(BUILD)/user/hello.o $(USER_DIR)/user.ld | $(BUILD)
 $(BUILD)/user_hello_elf.o: $(BUILD)/user/hello.elf | $(BUILD)
 	$(OBJCOPY) -I binary -O elf32-i386 -B i386 $(BUILD)/user/hello.elf $(BUILD)/user_hello_elf.o
 
-$(BUILD)/%.o: $(SRC_DIR)/%.c | $(BUILD)
+$(BUILD)/%.o: $(SRC_DIR)/core/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: $(SRC_DIR)/drivers/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: $(SRC_DIR)/fs/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: $(SRC_DIR)/mem/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: $(SRC_DIR)/task/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: $(SRC_DIR)/video/%.c | $(BUILD)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(BUILD)/%.o: $(SRC_DIR)/exec/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD)/kernel.elf: $(BUILD)/kernel_entry.o $(BUILD)/irq_stubs.o $(C_OBJECTS_BUILD) $(BUILD)/user_hello_elf.o $(BOOT_DIR)/kernel.ld
