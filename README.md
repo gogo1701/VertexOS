@@ -14,6 +14,7 @@ A minimal x86 operating system demonstrating OS fundamentals with a modular, ext
 ├── display.h/.c         # VGA display management
 ├── keyboard.h/.c        # Keyboard input handling
 ├── commands.h/.c        # Command system
+├── cli.h/.c             # Command-line interface
 ├── Makefile            # Build configuration
 └── build/              # Build artifacts
 ```

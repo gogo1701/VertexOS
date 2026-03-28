@@ -13,7 +13,7 @@ SRC_DIR=src
 BOOT_DIR=boot
 
 # Source files
-C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c display.c keyboard.c commands.c)
+C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c)
 C_OBJECTS=$(notdir $(C_SOURCES:.c=.o))
 C_OBJECTS_BUILD=$(addprefix $(BUILD)/,$(C_OBJECTS))
 

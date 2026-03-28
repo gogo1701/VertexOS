@@ -5,6 +5,17 @@
 #include "commands.h"
 #include "display.h"
 
+static u8 strings_equal(const char* a, const char* b) {
+    while (*a && *b) {
+        if (*a != *b) {
+            return 0;
+        }
+        a++;
+        b++;
+    }
+    return *a == *b;
+}
+
 /* Command registry entry */
 typedef struct {
     const char* name;
@@ -21,6 +32,14 @@ static void cmd_clear(const char* args);
 static void cmd_echo(const char* args);
 
 u8 command_register(const char* name, command_func func) {
+    u32 i;
+
+    for (i = 0; i < command_count_val; i++) {
+        if (strings_equal(commands[i].name, name)) {
+            return 0;
+        }
+    }
+
     if (command_count_val >= MAX_COMMANDS) {
         return 0;
     }
@@ -49,6 +68,10 @@ u8 command_execute(const char* input) {
     const char* args = input + cmd_len;
     while (*args == ' ') {
         args++;
+    }
+
+    if (cmd_len == 0) {
+        return 1;
     }
     
     /* Search for matching command */

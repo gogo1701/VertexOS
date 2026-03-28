@@ -2,11 +2,11 @@
 
 Goal: build a stable, educational, and practically useful 32-bit OS with a clear path to 64-bit.
 
-## Phase 0 - Foundation (done/in progress)
+## Phase 0 - Foundation (done)
 - [x] Working bootloader
 - [x] Basic command input
-- [ ] Clean command system (modular command registration and parser)
-- [ ] Project structure cleanup (src/include/boot, modular build)
+- [x] Clean command system (modular command registration and parser)
+- [x] Project structure cleanup (src/include/boot, modular build)
 
 Definition of done:
 - Clean build from scratch with one command
