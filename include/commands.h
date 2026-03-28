@@ -10,7 +10,7 @@
 #include "types.h"
 
 /* Maximum number of commands the system can handle */
-#define MAX_COMMANDS 24
+#define MAX_COMMANDS 32
 
 /* Command function pointer type */
 typedef void (*command_func)(const char* args);

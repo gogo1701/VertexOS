@@ -19,6 +19,7 @@
 #include "paging.h"
 #include "pmm.h"
 #include "scheduler.h"
+#include "userland.h"
 #include "vfs.h"
 
 extern u8 _kernel_start;
@@ -71,6 +72,7 @@ void kmain(const e820_entry* e820_map, u32 e820_count) {
     keyboard_init();
     interrupts_init();
     vfs_init();
+    userland_seed_programs();
     commands_init();
     scheduler_init();
 

@@ -60,10 +60,10 @@ Definition of done:
 - Shell can load commands/programs from disk
 
 ## Phase 5 - Useful Shell and Userland
-- [ ] Command parser with arguments, quotes, and help text
-- [ ] Built-in commands: help, clear, echo, ls, cat, mkdir, rm, cp, mv
-- [ ] Program loader (ELF preferred)
-- [ ] User programs toolchain integration
+- [x] Command parser with arguments, quotes, and help text
+- [x] Built-in commands: help, clear, echo, ls, cat, mkdir, rm, cp, mv
+- [x] Program loader (ELF preferred)
+- [x] User programs toolchain integration
 
 Definition of done:
 - OS is usable from shell for real file operations
@@ -113,8 +113,8 @@ Definition of done:
 ## Suggested Milestone Releases
 - [x] v0.1: Boot + interrupt-driven console + modular command system
 - [x] v0.2: Paging + heap + stable kernel diagnostics
-- [ ] v0.3: Filesystem + VFS + persistent shell commands
-- [ ] v0.4: User programs + syscalls + process scheduler
+- [x] v0.3: Filesystem + VFS + persistent shell commands
+- [x] v0.4: User programs + syscalls + process scheduler
 - [ ] v0.5: Networking basics + improved terminal
 
 ## Immediate Next 2 Weeks (practical sprint)
