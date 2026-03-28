@@ -8,6 +8,8 @@
 #include "panic.h"
 #include "pmm.h"
 #include "pit.h"
+#include "scheduler.h"
+#include "syscall.h"
 
 static u8 strings_equal(const char* a, const char* b) {
     while (*a && *b) {
@@ -38,6 +40,9 @@ static void cmd_uptime(const char* args);
 static void cmd_panic(const char* args);
 static void cmd_meminfo(const char* args);
 static void cmd_alloc(const char* args);
+static void cmd_tasks(const char* args);
+static void cmd_yield(const char* args);
+static void cmd_syscall(const char* args);
 
 u8 command_register(const char* name, command_func func) {
     u32 i;
@@ -249,6 +254,46 @@ static void cmd_alloc(const char* args) {
     display_print("alloc free ok\n");
 }
 
+/*
+ * tasks - Show scheduler task stats
+ */
+static void cmd_tasks(const char* args) {
+    (void)args;
+    display_print("Tasks: ");
+    display_print_num(scheduler_task_count(), 10);
+    display_print(" current_tid=");
+    display_print_num(scheduler_current_tid(), 10);
+    display_put_char('\n');
+}
+
+/*
+ * yield - Voluntarily yield CPU to next task
+ */
+static void cmd_yield(const char* args) {
+    (void)args;
+    scheduler_yield();
+}
+
+/*
+ * syscall - Test int 0x80 syscall interface
+ */
+static void cmd_syscall(const char* args) {
+    u32 tid;
+    u32 ticks;
+    (void)args;
+
+    tid = syscall_invoke(SYS_GET_TID, 0, 0, 0);
+    ticks = syscall_invoke(SYS_GET_TICKS, 0, 0, 0);
+
+    display_print("syscall tid=");
+    display_print_num(tid, 10);
+    display_print(" ticks=");
+    display_print_num(ticks, 10);
+    display_put_char('\n');
+
+    syscall_invoke(SYS_YIELD, 0, 0, 0);
+}
+
 void commands_init(void) {
     command_register("help", cmd_help);
     command_register("clear", cmd_clear);
@@ -257,4 +302,7 @@ void commands_init(void) {
     command_register("panic", cmd_panic);
     command_register("meminfo", cmd_meminfo);
     command_register("alloc", cmd_alloc);
+    command_register("tasks", cmd_tasks);
+    command_register("yield", cmd_yield);
+    command_register("syscall", cmd_syscall);
 }

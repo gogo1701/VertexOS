@@ -37,10 +37,10 @@ Definition of done:
 - Memory corruption bugs are detectable with debug checks
 
 ## Phase 3 - Process and Scheduling
-- [ ] Task structure and context switch assembly path
-- [ ] Basic round-robin scheduler
-- [ ] User/kernel mode separation ring transitions
-- [ ] Minimal syscall interface
+- [x] Task structure and context switch assembly path
+- [x] Basic round-robin scheduler
+- [x] User/kernel mode separation ring transitions
+- [x] Minimal syscall interface
 
 Definition of done:
 - Multiple tasks run without freezing system

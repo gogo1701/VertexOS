@@ -2,6 +2,7 @@
 #include "commands.h"
 #include "display.h"
 #include "keyboard.h"
+#include "scheduler.h"
 
 #define INPUT_MAX 128
 
@@ -114,5 +115,7 @@ void cli_run(void) {
             len++;
             redraw_input_line(input, len, cursor, prompt_row, prompt_col, &prev_len);
         }
+
+        scheduler_maybe_preempt();
     }
 }

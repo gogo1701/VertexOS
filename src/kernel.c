@@ -18,12 +18,27 @@
 #include "interrupts.h"
 #include "paging.h"
 #include "pmm.h"
+#include "scheduler.h"
 
 extern u8 _kernel_start;
 extern u8 _kernel_end;
 
 #define HEAP_START 0x01000000u
 #define HEAP_SIZE  (1024u * 1024u)
+
+static void cli_task(void* arg) {
+    (void)arg;
+    cli_run();
+}
+
+static void idle_task(void* arg) {
+    (void)arg;
+    for (;;) {
+        /* Let timer-driven preemption switch back to runnable tasks. */
+        scheduler_maybe_preempt();
+        interrupts_halt();
+    }
+}
 
 /* ============================
  * Main Kernel Entry Point
@@ -55,11 +70,14 @@ void kmain(const e820_entry* e820_map, u32 e820_count) {
     keyboard_init();
     interrupts_init();
     commands_init();
+    scheduler_init();
 
     /* Display welcome message */
     display_print("VertexOS - Simple Console\n");
     display_print("Type 'help' for available commands.\n\n");
 
-    /* Enter the command-line interface */
-    cli_run();
+    /* Start scheduler with CLI and idle tasks. */
+    scheduler_create_task(cli_task, 0, "cli", TASK_MODE_KERNEL);
+    scheduler_create_task(idle_task, 0, "idle", TASK_MODE_KERNEL);
+    scheduler_start();
 }

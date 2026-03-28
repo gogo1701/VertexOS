@@ -5,6 +5,7 @@
 #include "keyboard.h"
 #include "interrupts.h"
 #include "io.h"
+#include "scheduler.h"
 
 #define KB_BUFFER_SIZE 128
 
@@ -122,6 +123,8 @@ s32 keyboard_read_key(void) {
             return key;
         }
         interrupts_enable();
+
+        scheduler_maybe_preempt();
 
         /* Sleep until an IRQ wakes the CPU. */
         interrupts_halt();
