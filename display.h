@@ -1,0 +1,58 @@
+/*
+ * VGA Display Management
+ * 
+ * Handles all screen rendering, cursor positioning, and text scrolling
+ */
+
+#ifndef DISPLAY_H
+#define DISPLAY_H
+
+#include "types.h"
+
+/* VGA Display Constants */
+#define VGA_WIDTH 80           /* Characters per row */
+#define VGA_HEIGHT 25          /* Total rows of text */
+
+/*
+ * Initialize the display
+ * 
+ * Clears the screen and positions the cursor at the top
+ */
+void display_init(void);
+
+/*
+ * Clear the entire screen and reset cursor
+ */
+void display_clear(void);
+
+/*
+ * Display a single character, handling special characters
+ * 
+ * @c: Character to display (\n for newline, \b for backspace)
+ */
+void display_put_char(char c);
+
+/*
+ * Print a null-terminated string
+ * 
+ * @s: String to print
+ */
+void display_print(const char* s);
+
+/*
+ * Print an integer value
+ * 
+ * @num: Number to print
+ * @base: Base for conversion (10 for decimal, 16 for hex, etc.)
+ */
+void display_print_num(u32 num, u32 base);
+
+/*
+ * Get current cursor position
+ * 
+ * @row: Output parameter for row position
+ * @col: Output parameter for column position
+ */
+void display_get_cursor(u32* row, u32* col);
+
+#endif /* DISPLAY_H */
