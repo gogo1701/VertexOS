@@ -48,11 +48,11 @@ Definition of done:
 - Crashed task does not always crash whole kernel
 
 ## Phase 4 - File System and Storage
-- [ ] Block device abstraction (start with ATA PIO or virtio-blk later)
-- [ ] VFS layer (open/read/write/close abstractions)
-- [ ] Simple filesystem (recommended: FAT12/FAT16 first)
-- [ ] Path parser and current working directory support
-- [ ] File permissions model (simple initially)
+- [x] Block device abstraction (start with ATA PIO or virtio-blk later)
+- [x] VFS layer (open/read/write/close abstractions)
+- [x] Simple filesystem (recommended: FAT12/FAT16 first)
+- [x] Path parser and current working directory support
+- [x] File permissions model (simple initially)
 
 Definition of done:
 - Can create/read/write/delete files and directories

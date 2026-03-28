@@ -7,13 +7,14 @@ QEMU=/usr/bin/qemu-system-i386
 CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2 -Iinclude
 LDFLAGS=-m elf_i386 -nostdlib -T boot/kernel.ld
 MAX_KERNEL_BYTES=32768
+DISK_IMAGE_BYTES=33554432
 
 BUILD=build
 SRC_DIR=src
 BOOT_DIR=boot
 
 # Source files
-C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c interrupts.c pic.c pit.c panic.c bootinfo.c pmm.c paging.c heap.c scheduler.c syscall.c)
+C_SOURCES=$(addprefix $(SRC_DIR)/,kernel.c cli.c display.c keyboard.c commands.c interrupts.c pic.c pit.c panic.c bootinfo.c pmm.c paging.c heap.c scheduler.c syscall.c ata.c blockdev.c simplefs.c vfs.c)
 C_OBJECTS=$(notdir $(C_SOURCES:.c=.o))
 C_OBJECTS_BUILD=$(addprefix $(BUILD)/,$(C_OBJECTS))
 
@@ -45,6 +46,7 @@ $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 
 $(BUILD)/os-image.bin: $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	cat $(BUILD)/boot.bin $(BUILD)/kernel.bin > $(BUILD)/os-image.bin
+	truncate -s $(DISK_IMAGE_BYTES) $(BUILD)/os-image.bin
 
 run: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin

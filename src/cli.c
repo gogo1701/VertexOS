@@ -3,8 +3,19 @@
 #include "display.h"
 #include "keyboard.h"
 #include "scheduler.h"
+#include "vfs.h"
 
 #define INPUT_MAX 128
+
+static void cli_print_prompt(void) {
+    const char* cwd = vfs_get_cwd();
+    if (cwd && cwd[0]) {
+        display_print(cwd);
+    } else {
+        display_print("/");
+    }
+    display_print("> ");
+}
 
 static void redraw_input_line(
     const char* input,
@@ -38,7 +49,7 @@ void cli_run(void) {
     u32 prompt_row;
     u32 prompt_col;
 
-    display_print("> ");
+    cli_print_prompt();
     display_get_cursor(&prompt_row, &prompt_col);
 
     for (;;) {
@@ -100,7 +111,7 @@ void cli_run(void) {
             len = 0;
             cursor = 0;
             prev_len = 0;
-            display_print("> ");
+            cli_print_prompt();
             display_get_cursor(&prompt_row, &prompt_col);
             continue;
         }
