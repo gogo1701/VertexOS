@@ -8,34 +8,39 @@ CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra
 LDFLAGS=-m elf_i386 -nostdlib -T kernel.ld
 MAX_KERNEL_BYTES=4096
 
-all: os-image.bin
+BUILD=build
 
-boot.bin: boot.asm
-	$(ASM) -f bin boot.asm -o boot.bin
+all: $(BUILD)/os-image.bin
 
-kernel_entry.o: kernel_entry.asm
-	$(ASM) -f elf32 kernel_entry.asm -o kernel_entry.o
+$(BUILD):
+	mkdir -p $(BUILD)
 
-kernel.o: kernel.c
-	$(CC) $(CFLAGS) -c kernel.c -o kernel.o
+$(BUILD)/boot.bin: boot.asm | $(BUILD)
+	$(ASM) -f bin boot.asm -o $(BUILD)/boot.bin
 
-kernel.elf: kernel_entry.o kernel.o kernel.ld
-	$(LD) $(LDFLAGS) -o kernel.elf kernel_entry.o kernel.o
+$(BUILD)/kernel_entry.o: kernel_entry.asm | $(BUILD)
+	$(ASM) -f elf32 kernel_entry.asm -o $(BUILD)/kernel_entry.o
 
-kernel.bin: kernel.elf
-	$(OBJCOPY) -O binary kernel.elf kernel.bin
-	@test $$(wc -c < kernel.bin) -le $(MAX_KERNEL_BYTES) || \
+$(BUILD)/kernel.o: kernel.c | $(BUILD)
+	$(CC) $(CFLAGS) -c kernel.c -o $(BUILD)/kernel.o
+
+$(BUILD)/kernel.elf: $(BUILD)/kernel_entry.o $(BUILD)/kernel.o kernel.ld
+	$(LD) $(LDFLAGS) -o $(BUILD)/kernel.elf $(BUILD)/kernel_entry.o $(BUILD)/kernel.o
+
+$(BUILD)/kernel.bin: $(BUILD)/kernel.elf
+	$(OBJCOPY) -O binary $(BUILD)/kernel.elf $(BUILD)/kernel.bin
+	@test $$(wc -c < $(BUILD)/kernel.bin) -le $(MAX_KERNEL_BYTES) || \
 		(echo "kernel.bin is too large; increase KERNEL_SECTORS in boot.asm" && false)
-	truncate -s $(MAX_KERNEL_BYTES) kernel.bin
+	truncate -s $(MAX_KERNEL_BYTES) $(BUILD)/kernel.bin
 
-os-image.bin: boot.bin kernel.bin
-	cat boot.bin kernel.bin > os-image.bin
+$(BUILD)/os-image.bin: $(BUILD)/boot.bin $(BUILD)/kernel.bin
+	cat $(BUILD)/boot.bin $(BUILD)/kernel.bin > $(BUILD)/os-image.bin
 
-run: os-image.bin
-	$(QEMU) -drive format=raw,file=os-image.bin
+run: $(BUILD)/os-image.bin
+	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin
 
-run-headless: os-image.bin
-	$(QEMU) -drive format=raw,file=os-image.bin -nographic
+run-headless: $(BUILD)/os-image.bin
+	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin -nographic
 
 clean:
-	rm -f boot.bin kernel_entry.o kernel.o kernel.elf kernel.bin os-image.bin
+	rm -rf $(BUILD)
