@@ -11,6 +11,7 @@
 
 #include "display.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "commands.h"
 #include "cli.h"
 #include "bootinfo.h"
@@ -74,6 +75,7 @@ void kmain(u32 boot_video_mode, const e820_entry* e820_map, u32 e820_count) {
     heap_init(HEAP_START, HEAP_SIZE);
 
     keyboard_init();
+    mouse_init();
     interrupts_init();
     vfs_init();
     userland_seed_programs();

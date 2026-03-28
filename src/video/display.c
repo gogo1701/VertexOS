@@ -5,6 +5,7 @@
 #include "display.h"
 #include "framebuffer.h"
 #include "io.h"
+#include "mouse.h"
 #include "serial.h"
 #include "video.h"
 
@@ -16,12 +17,39 @@
 #define GFX_FG 15u
 #define GFX_BG 0u
 #define GFX_CURSOR 12u
+#define GFX_BUTTON_X 32u
+#define GFX_BUTTON_Y 48u
+#define GFX_BUTTON_W 80u
+#define GFX_BUTTON_H 16u
+#define GFX_TASKBAR_HEIGHT 18u
+#define GFX_WINDOW_TITLE_H 10u
+#define GFX_WINDOW_BORDER 1u
+
+typedef struct {
+    s32 x;
+    s32 y;
+    u32 w;
+    u32 h;
+    u8 title_bg;
+    u8 body_bg;
+    u8 border;
+    const char* title;
+    u8 visible;
+} gfx_window;
 
 static volatile u16* const VGA = (u16*)0xB8000;
 static u32 cursor_row = 0;
 static u32 cursor_col = 0;
 static char text_cells[VGA_WIDTH * VGA_HEIGHT];
 static u8 g_graphics_test_overlay = 0;
+static u8 g_gfx_fg = GFX_FG;
+static u8 g_gfx_bg = GFX_BG;
+static u8 g_gfx_disable_overlay = 0;
+static u8 g_button_pressed = 0;
+static gfx_window g_windows[2];
+static s32 g_drag_window = -1;
+static s32 g_drag_offset_x = 0;
+static s32 g_drag_offset_y = 0;
 
 static const u8 GLYPH_SPACE[7] = {0, 0, 0, 0, 0, 0, 0};
 static const u8 GLYPH_QMARK[7] = {0x0E, 0x11, 0x01, 0x06, 0x04, 0x00, 0x04};
@@ -189,13 +217,13 @@ static void gfx_render_cell(u32 row, u32 col, char ch) {
     u32 py = row * GFX_CELL_H;
     u32 y;
 
-    framebuffer_fill_rect(px, py, GFX_CELL_W, GFX_CELL_H, GFX_BG);
+    framebuffer_fill_rect(px, py, GFX_CELL_W, GFX_CELL_H, g_gfx_bg);
     for (y = 0; y < 7; y++) {
         u8 bits = glyph[y];
         u32 x;
         for (x = 0; x < 5; x++) {
             if (bits & (1u << (4u - x))) {
-                framebuffer_put_pixel(px + 1u + x, py + y, GFX_FG);
+                framebuffer_put_pixel(px + 1u + x, py + y, g_gfx_fg);
             }
         }
     }
@@ -207,22 +235,128 @@ static void gfx_render_cursor(void) {
     framebuffer_fill_rect(px + 1u, py, 5u, 1u, GFX_CURSOR);
 }
 
-static void gfx_render_test_overlay(void) {
-    framebuffer_fill_rect(0, 0, 320, 4, 15);
-    framebuffer_fill_rect(0, 196, 320, 4, 15);
-    framebuffer_fill_rect(0, 0, 4, 200, 15);
-    framebuffer_fill_rect(316, 0, 4, 200, 15);
+static void gfx_render_label(u32 x_start, u32 y_start, const char* text, u8 color);
+static void gfx_render_taskbar(void);
+static void gfx_render_window(gfx_window* window);
+static void gfx_render_windows(void);
 
-    framebuffer_fill_rect(256, 12, 16, 16, 12);
-    framebuffer_fill_rect(276, 12, 16, 16, 10);
-    framebuffer_fill_rect(296, 12, 16, 16, 14);
-    framebuffer_fill_rect(256, 32, 56, 12, 15);
+static void gfx_render_button(void) {
+    u8 face_color = 7u;
+    u8 border_light = 15u;
+    u8 border_dark = 8u;
+    if (g_button_pressed) {
+        border_light = 8u;
+        border_dark = 15u;
+    }
+
+    framebuffer_fill_rect(GFX_BUTTON_X, GFX_BUTTON_Y, GFX_BUTTON_W, GFX_BUTTON_H, face_color);
+    framebuffer_fill_rect(GFX_BUTTON_X, GFX_BUTTON_Y, GFX_BUTTON_W, 1u, border_light);
+    framebuffer_fill_rect(GFX_BUTTON_X, GFX_BUTTON_Y, 1u, GFX_BUTTON_H, border_light);
+    framebuffer_fill_rect(GFX_BUTTON_X, GFX_BUTTON_Y + GFX_BUTTON_H - 1u,
+                          GFX_BUTTON_W, 1u, border_dark);
+    framebuffer_fill_rect(GFX_BUTTON_X + GFX_BUTTON_W - 1u, GFX_BUTTON_Y,
+                          1u, GFX_BUTTON_H, border_dark);
+
+    if (GFX_BUTTON_W > 4u && GFX_BUTTON_H > 4u) {
+        framebuffer_fill_rect(GFX_BUTTON_X + 1u, GFX_BUTTON_Y + 1u,
+                              GFX_BUTTON_W - 2u, GFX_BUTTON_H - 2u, face_color);
+    }
+
+    u32 text_width = 5u * 6u - 1u;
+    u32 text_x = GFX_BUTTON_X + (GFX_BUTTON_W - text_width) / 2u;
+    u32 text_y = GFX_BUTTON_Y + (GFX_BUTTON_H - 7u) / 2u;
+    gfx_render_label(text_x, text_y, "CLICK", 0u);
+}
+
+static void gfx_render_label(u32 x_start, u32 y_start, const char* text, u8 color) {
+    const char* p = text;
+    while (*p) {
+        const u8* glyph = glyph_for(*p);
+        u32 row;
+        for (row = 0; row < 7u; row++) {
+            u8 bits = glyph[row];
+            u32 col;
+            for (col = 0; col < 5u; col++) {
+                if (bits & (1u << (4u - col))) {
+                    framebuffer_put_pixel(x_start + col, y_start + row, color);
+                }
+            }
+        }
+        x_start += 6u;
+        p++;
+    }
+}
+
+static void gfx_render_taskbar(void) {
+    u8 bar_color = 8u;
+    framebuffer_fill_rect(0, FB_HEIGHT - GFX_TASKBAR_HEIGHT, FB_WIDTH,
+                          GFX_TASKBAR_HEIGHT, bar_color);
+    framebuffer_fill_rect(0, FB_HEIGHT - GFX_TASKBAR_HEIGHT, FB_WIDTH, 1u, 15u);
+    framebuffer_fill_rect(0, FB_HEIGHT - 1, FB_WIDTH, 1u, 0u);
+
+    /* Start button */
+    framebuffer_fill_rect(4u, FB_HEIGHT - GFX_TASKBAR_HEIGHT + 3u, 40u,
+                          GFX_TASKBAR_HEIGHT - 6u, 7u);
+    framebuffer_fill_rect(4u, FB_HEIGHT - GFX_TASKBAR_HEIGHT + 3u, 40u, 1u, 15u);
+    framebuffer_fill_rect(4u, FB_HEIGHT - GFX_TASKBAR_HEIGHT + 3u, 1u,
+                          GFX_TASKBAR_HEIGHT - 6u, 15u);
+    framebuffer_fill_rect(4u, FB_HEIGHT - 3u, 40u, 1u, 8u);
+    framebuffer_fill_rect(43u, FB_HEIGHT - GFX_TASKBAR_HEIGHT + 3u, 1u,
+                          GFX_TASKBAR_HEIGHT - 6u, 8u);
+    gfx_render_label(10u, FB_HEIGHT - GFX_TASKBAR_HEIGHT + 6u, "START", 0u);
+
+    /* Clock and status on right side */
+    gfx_render_label(FB_WIDTH - 40u, FB_HEIGHT - GFX_TASKBAR_HEIGHT + 6u,
+                     "12:34", 0u);
+}
+
+static void gfx_render_window(gfx_window* window) {
+    if (!window->visible) {
+        return;
+    }
+
+    framebuffer_fill_rect(window->x, window->y, window->w, window->h,
+                          window->body_bg);
+    framebuffer_fill_rect(window->x, window->y, window->w,
+                          GFX_WINDOW_TITLE_H, window->title_bg);
+
+    framebuffer_fill_rect(window->x, window->y, window->w, GFX_WINDOW_BORDER, 15u);
+    framebuffer_fill_rect(window->x, window->y, GFX_WINDOW_BORDER, window->h, 15u);
+    framebuffer_fill_rect(window->x, window->y + window->h - GFX_WINDOW_BORDER,
+                          window->w, GFX_WINDOW_BORDER, 8u);
+    framebuffer_fill_rect(window->x + window->w - GFX_WINDOW_BORDER, window->y,
+                          GFX_WINDOW_BORDER, window->h, 8u);
+
+    gfx_render_label(window->x + 4u, window->y + 2u, window->title, 0u);
+}
+
+static void gfx_render_windows(void) {
+    gfx_render_window(&g_windows[0]);
+    gfx_render_window(&g_windows[1]);
+}
+
+static void gfx_render_color_spectrum(void) {
+    u32 x;
+    u32 y;
+
+    for (x = 0; x < 256u; x++) {
+        u8 color = (u8)x;
+        for (y = 0; y < 12u; y++) {
+            framebuffer_put_pixel(32u + x, 32u + y, color);
+        }
+    }
+}
+
+static void gfx_render_test_overlay(void) {
+    framebuffer_clear(15);
+    framebuffer_fill_rect(0, FB_HEIGHT - 4, FB_WIDTH, 4, 0);
+    gfx_render_color_spectrum();
 }
 
 static void gfx_render_full(void) {
     u32 row;
     u32 col;
-    framebuffer_clear(GFX_BG);
+    framebuffer_clear(g_gfx_bg);
 
     for (row = 0; row < GFX_ROWS; row++) {
         for (col = 0; col < GFX_COLS; col++) {
@@ -233,19 +367,51 @@ static void gfx_render_full(void) {
         cursor_col = GFX_COLS - 1u;
     }
 
-    if (g_graphics_test_overlay) {
+    if (g_graphics_test_overlay && !g_gfx_disable_overlay) {
         gfx_render_test_overlay();
     }
 
+    gfx_render_windows();
+    gfx_render_taskbar();
     gfx_render_cursor();
+    gfx_render_button();
 }
 
 void display_init(void) {
     u32 i;
     framebuffer_init();
+
+    if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+        u8 overlay_enabled = 0u;
+        if (video_get_boot_overlay_preference(&overlay_enabled) && overlay_enabled) {
+            g_graphics_test_overlay = 1u;
+        }
+    }
+
     for (i = 0; i < VGA_WIDTH * VGA_HEIGHT; i++) {
         text_cells[i] = ' ';
     }
+
+    g_windows[0].x = 48;
+    g_windows[0].y = 32;
+    g_windows[0].w = 120;
+    g_windows[0].h = 90;
+    g_windows[0].title_bg = 9u;
+    g_windows[0].body_bg = 3u;
+    g_windows[0].border = 15u;
+    g_windows[0].title = "Terminal";
+    g_windows[0].visible = 1u;
+
+    g_windows[1].x = 200;
+    g_windows[1].y = 50;
+    g_windows[1].w = 140;
+    g_windows[1].h = 80;
+    g_windows[1].title_bg = 2u;
+    g_windows[1].body_bg = 4u;
+    g_windows[1].border = 15u;
+    g_windows[1].title = "Notes";
+    g_windows[1].visible = 1u;
+
     cursor_row = 0;
     cursor_col = 0;
     display_refresh();
@@ -261,6 +427,7 @@ void display_refresh(void) {
 
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
         gfx_render_full();
+        mouse_refresh_cursor();
     } else {
         text_render_full();
     }
@@ -383,7 +550,83 @@ void display_get_cursor(u32* row, u32* col) {
 
 void display_set_graphics_test_overlay(u8 enabled) {
     g_graphics_test_overlay = enabled ? 1u : 0u;
+    (void)video_set_boot_overlay_preference(enabled ? 1u : 0u);
+    g_gfx_disable_overlay = 0;
     display_refresh();
+}
+
+void display_set_button_pressed(u8 pressed) {
+    u8 normalized = pressed ? 1u : 0u;
+    if (g_button_pressed != normalized) {
+        g_button_pressed = normalized;
+        if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+            mouse_hide_cursor();
+            gfx_render_button();
+            mouse_refresh_cursor();
+        } else {
+            display_refresh();
+        }
+    }
+}
+
+void display_handle_mouse_event(s32 x, s32 y, u8 buttons) {
+    static u8 prev_buttons = 0;
+
+    if ((buttons & 0x01) && !(prev_buttons & 0x01)) {
+        s32 i;
+        for (i = 1; i >= 0; i--) {
+            gfx_window* window = &g_windows[i];
+            if (!window->visible) {
+                continue;
+            }
+            if (x >= window->x && x < window->x + (s32)window->w &&
+                y >= window->y && y < window->y + (s32)window->h) {
+                if (i != 1) {
+                    gfx_window temp = g_windows[i];
+                    g_windows[i] = g_windows[1];
+                    g_windows[1] = temp;
+                    g_drag_window = 1;
+                } else {
+                    g_drag_window = i;
+                }
+                gfx_window* selected = &g_windows[g_drag_window];
+                g_drag_offset_x = x - selected->x;
+                g_drag_offset_y = y - selected->y;
+                break;
+            }
+        }
+    }
+
+    if (g_drag_window >= 0 && (buttons & 0x01)) {
+        gfx_window* window = &g_windows[g_drag_window];
+        window->x = x - g_drag_offset_x;
+        window->y = y - g_drag_offset_y;
+        if (window->x < 0) {
+            window->x = 0;
+        }
+        if (window->y < 0) {
+            window->y = 0;
+        }
+        if (window->x + (s32)window->w > (s32)FB_WIDTH) {
+            window->x = FB_WIDTH - window->w;
+        }
+        if (window->y + (s32)window->h > (s32)FB_HEIGHT - (s32)GFX_TASKBAR_HEIGHT) {
+            window->y = FB_HEIGHT - (s32)GFX_TASKBAR_HEIGHT - window->h;
+        }
+        display_refresh();
+    }
+
+    if (!(buttons & 0x01) && (prev_buttons & 0x01)) {
+        g_drag_window = -1;
+    }
+
+    prev_buttons = buttons;
+}
+
+void display_set_gfx_colors(u8 fg, u8 bg, u8 suppress_test_overlay) {
+    g_gfx_fg = fg;
+    g_gfx_bg = bg;
+    g_gfx_disable_overlay = suppress_test_overlay ? 1u : 0u;
 }
 
 u8 display_get_graphics_test_overlay(void) {

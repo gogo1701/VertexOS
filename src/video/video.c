@@ -4,6 +4,7 @@
 
 #define BOOT_PREF_SECTOR 0u
 #define BOOT_PREF_OFFSET 508u
+#define BOOT_OVERLAY_OFFSET 509u
 
 static video_mode g_mode = VIDEO_MODE_TEXT;
 void video_init(video_mode initial_mode) {
@@ -46,5 +47,27 @@ u8 video_set_boot_preference(video_mode mode) {
     }
 
     sector[BOOT_PREF_OFFSET] = (mode == VIDEO_MODE_GRAPHICS) ? 1u : 0u;
+    return blockdev_write(BOOT_PREF_SECTOR, sector);
+}
+
+u8 video_get_boot_overlay_preference(u8* out_enabled) {
+    u8 sector[512];
+
+    if (!out_enabled || !blockdev_read(BOOT_PREF_SECTOR, sector)) {
+        return 0;
+    }
+
+    *out_enabled = sector[BOOT_OVERLAY_OFFSET] ? 1u : 0u;
+    return 1;
+}
+
+u8 video_set_boot_overlay_preference(u8 enabled) {
+    u8 sector[512];
+
+    if (!blockdev_read(BOOT_PREF_SECTOR, sector)) {
+        return 0;
+    }
+
+    sector[BOOT_OVERLAY_OFFSET] = enabled ? 1u : 0u;
     return blockdev_write(BOOT_PREF_SECTOR, sector);
 }

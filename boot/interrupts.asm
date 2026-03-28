@@ -3,11 +3,13 @@ BITS 32
 GLOBAL idt_load
 GLOBAL irq0_stub
 GLOBAL irq1_stub
+GLOBAL irq12_stub
 GLOBAL isr128_stub
 GLOBAL context_switch
 
 EXTERN irq_timer_handler
 EXTERN irq_keyboard_handler
+EXTERN irq_mouse_handler
 EXTERN syscall_handler
 
 ; Load IDT from pointer passed as the first argument.
@@ -27,6 +29,13 @@ irq0_stub:
 irq1_stub:
     pusha
     call irq_keyboard_handler
+    popa
+    iretd
+
+; IRQ12: PS/2 mouse
+irq12_stub:
+    pusha
+    call irq_mouse_handler
     popa
     iretd
 

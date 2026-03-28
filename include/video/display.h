@@ -27,6 +27,9 @@ void display_clear(void);
 void display_refresh(void);
 void display_set_graphics_test_overlay(u8 enabled);
 u8 display_get_graphics_test_overlay(void);
+void display_set_button_pressed(u8 pressed);
+void display_handle_mouse_event(s32 x, s32 y, u8 buttons);
+void display_set_gfx_colors(u8 fg, u8 bg, u8 suppress_test_overlay);
 
 /*
  * Display a single character, handling special characters

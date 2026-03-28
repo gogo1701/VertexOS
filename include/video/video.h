@@ -70,6 +70,7 @@ const char* video_mode_name(video_mode mode);
  * @return: 1 if a valid preference was found, 0 if unset or disk error.
  */
 u8 video_get_boot_preference(video_mode* out_mode);
+	u8 video_get_boot_overlay_preference(u8* out_enabled);
 
 /*
  * video_set_boot_preference - Persist a next-boot mode preference to disk.
@@ -83,5 +84,7 @@ u8 video_get_boot_preference(video_mode* out_mode);
  * @return: 1 on success, 0 if the disk write fails.
  */
 u8 video_set_boot_preference(video_mode mode);
+
+u8 video_set_boot_overlay_preference(u8 enabled);
 
 #endif /* VIDEO_H */

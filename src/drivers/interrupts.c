@@ -1,5 +1,6 @@
 #include "interrupts.h"
 #include "keyboard.h"
+#include "mouse.h"
 #include "panic.h"
 #include "pic.h"
 #include "pit.h"
@@ -31,6 +32,7 @@ static idt_ptr idtp;
 extern void idt_load(u32 idt_ptr_addr);
 extern void irq0_stub(void);
 extern void irq1_stub(void);
+extern void irq12_stub(void);
 extern void isr128_stub(void);
 
 static void idt_set_gate(u8 index, u32 handler, u16 selector, u8 flags) {
@@ -50,6 +52,11 @@ void irq_timer_handler(void) {
 void irq_keyboard_handler(void) {
     keyboard_irq_handler();
     pic_send_eoi(1);
+}
+
+void irq_mouse_handler(void) {
+    mouse_irq_handler();
+    pic_send_eoi(12);
 }
 
 void interrupts_enable(void) {
@@ -73,6 +80,7 @@ void interrupts_init(void) {
 
     idt_set_gate(32, (u32)irq0_stub, KERNEL_CS, IDT_FLAG_INT_GATE);
     idt_set_gate(33, (u32)irq1_stub, KERNEL_CS, IDT_FLAG_INT_GATE);
+    idt_set_gate(44, (u32)irq12_stub, KERNEL_CS, IDT_FLAG_INT_GATE);
     idt_set_gate(0x80, (u32)isr128_stub, KERNEL_CS, IDT_FLAG_USER_INT_GATE);
 
     idtp.limit = (u16)(sizeof(idt_entry) * IDT_ENTRIES - 1);
@@ -81,12 +89,14 @@ void interrupts_init(void) {
 
     pic_remap(0x20, 0x28);
 
-    /* Mask all IRQ lines except timer (IRQ0) and keyboard (IRQ1). */
+    /* Mask all IRQ lines except timer (IRQ0), keyboard (IRQ1), slave PIC (IRQ2), and mouse (IRQ12). */
     for (i = 0; i < 16; i++) {
         pic_set_mask((u8)i);
     }
     pic_clear_mask(0);
     pic_clear_mask(1);
+    pic_clear_mask(2);
+    pic_clear_mask(12);
 
     pit_init(100);
 

@@ -674,26 +674,46 @@ static void cmd_video(const char* args) {
     }
 
     if (strings_equal(mode, "test")) {
-        if (video_get_mode() != VIDEO_MODE_GRAPHICS) {
-            display_print("video test: boot into graphics mode first\n");
-            return;
-        }
-
         if (!read_arg(&args, subarg, sizeof(subarg)) || !subarg[0] || strings_equal(subarg, "status")) {
-            display_print("video test: ");
-            display_print(display_get_graphics_test_overlay() ? "on" : "off");
-            display_put_char('\n');
+            if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+                display_print("video test: ");
+                display_print(display_get_graphics_test_overlay() ? "on" : "off");
+                display_put_char('\n');
+            } else {
+                u8 overlay_saved = 0u;
+                if (video_get_boot_overlay_preference(&overlay_saved)) {
+                    display_print("video test: ");
+                    display_print(overlay_saved ? "on" : "off");
+                    display_print(" (next boot)");
+                    display_put_char('\n');
+                } else {
+                    display_print("video test: unknown\n");
+                }
+            }
             return;
         }
 
         if (strings_equal(subarg, "on")) {
+            if (video_get_mode() != VIDEO_MODE_GRAPHICS) {
+                if (!video_set_boot_preference(VIDEO_MODE_GRAPHICS) || !video_set_boot_overlay_preference(1u)) {
+                    display_print("video: save failed\n");
+                    return;
+                }
+                display_print("video test: on (graphics+overlay saved, restarting...)\n");
+                power_restart();
+                return;
+            }
+
             display_set_graphics_test_overlay(1);
             display_print("video test: on\n");
             return;
         }
 
         if (strings_equal(subarg, "off")) {
-            display_set_graphics_test_overlay(0);
+            (void)video_set_boot_overlay_preference(0u);
+            if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+                display_set_graphics_test_overlay(0);
+            }
             display_print("video test: off\n");
             return;
         }

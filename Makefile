@@ -26,7 +26,7 @@ USER_DIR=user
 
 # Source files grouped by subsystem
 CORE_SRCS  = $(addprefix $(SRC_DIR)/core/,    kernel.c cli.c commands.c panic.c)
-DRIVER_SRCS= $(addprefix $(SRC_DIR)/drivers/, ata.c blockdev.c interrupts.c keyboard.c pic.c pit.c power.c rtc.c serial.c)
+DRIVER_SRCS= $(addprefix $(SRC_DIR)/drivers/, ata.c blockdev.c interrupts.c keyboard.c mouse.c pic.c pit.c power.c rtc.c serial.c)
 FS_SRCS    = $(addprefix $(SRC_DIR)/fs/,      simplefs.c vfs.c)
 MEM_SRCS   = $(addprefix $(SRC_DIR)/mem/,     bootinfo.c heap.c paging.c pmm.c)
 TASK_SRCS  = $(addprefix $(SRC_DIR)/task/,    scheduler.c syscall.c)
@@ -97,6 +97,9 @@ $(BUILD)/os-image.bin: $(BUILD)/boot.bin $(BUILD)/kernel.bin
 
 run: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin
+
+run-1080: $(BUILD)/os-image.bin
+	$(QEMU) -g 1080x720 -drive format=raw,file=$(BUILD)/os-image.bin
 
 run-headless: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin -nographic
