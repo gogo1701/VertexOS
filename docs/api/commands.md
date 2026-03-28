@@ -166,3 +166,6 @@ static void cmd_myfile(const char* args) {
 | `pwd`     | `pwd`                                | Print working directory |
 | `exec`    | `exec <elf-path>`                    | Load and run ELF |
 | `video`   | `video [status\|text\|gfx\|test …]` | Video mode control |
+| `ifconfig`| `ifconfig`                            | Show NIC/IP/DHCP configuration |
+| `dhcp`    | `dhcp`                                | Request a DHCP lease |
+| `ping`    | `ping <ipv4> [timeout_ms]`            | Send one ICMP echo request |

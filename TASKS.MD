@@ -81,9 +81,9 @@ Definition of done:
 - Terminal interaction is comfortable for daily use
 
 ## Phase 7 - Networking (optional but highly useful)
-- [ ] NIC driver (start with emulated card in QEMU)
-- [ ] Minimal network stack: ARP, IPv4, ICMP, UDP, TCP basics
-- [ ] DHCP client and simple tools (ping)
+- [x] NIC driver (RTL8139 on emulated QEMU NIC)
+- [x] Minimal network stack: ARP, IPv4, ICMP, UDP, TCP basics
+- [x] DHCP client and simple tools (ping, dns)
 
 Definition of done:
 - OS gets IP automatically in QEMU network setup
@@ -115,7 +115,7 @@ Definition of done:
 - [x] v0.2: Paging + heap + stable kernel diagnostics
 - [x] v0.3: Filesystem + VFS + persistent shell commands
 - [x] v0.4: User programs + syscalls + process scheduler
-- [ ] v0.5: Networking basics + improved terminal
+- [x] v0.5: Networking basics + improved terminal
 
 ## Immediate Next 2 Weeks (practical sprint)
 - [x] Refactor into clean folders and module boundaries

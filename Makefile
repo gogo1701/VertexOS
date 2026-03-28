@@ -3,6 +3,7 @@ CC=gcc
 LD=ld
 OBJCOPY=objcopy
 QEMU=/usr/bin/qemu-system-i386
+QEMU_NET=-netdev user,id=n1 -device rtl8139,netdev=n1
 
 CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2 \
        -Iinclude \
@@ -16,7 +17,7 @@ CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra
 CFLAGS_USER=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2
 LDFLAGS=-m elf_i386 -nostdlib -T boot/kernel.ld
 LDFLAGS_USER=-m elf_i386 -nostdlib -T user/user.ld
-MAX_KERNEL_BYTES=49152
+MAX_KERNEL_BYTES=63488
 DISK_IMAGE_BYTES=33554432
 
 BUILD=build
@@ -26,7 +27,7 @@ USER_DIR=user
 
 # Source files grouped by subsystem
 CORE_SRCS  = $(addprefix $(SRC_DIR)/core/,    kernel.c cli.c commands.c panic.c)
-DRIVER_SRCS= $(addprefix $(SRC_DIR)/drivers/, ata.c blockdev.c interrupts.c keyboard.c mouse.c pic.c pit.c power.c rtc.c serial.c)
+DRIVER_SRCS= $(addprefix $(SRC_DIR)/drivers/, ata.c blockdev.c interrupts.c keyboard.c mouse.c pic.c pit.c power.c rtc.c serial.c pci.c rtl8139.c net.c)
 FS_SRCS    = $(addprefix $(SRC_DIR)/fs/,      simplefs.c vfs.c)
 MEM_SRCS   = $(addprefix $(SRC_DIR)/mem/,     bootinfo.c heap.c paging.c pmm.c)
 TASK_SRCS  = $(addprefix $(SRC_DIR)/task/,    scheduler.c syscall.c)
@@ -96,13 +97,17 @@ $(BUILD)/os-image.bin: $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	truncate -s $(DISK_IMAGE_BYTES) $(BUILD)/os-image.bin
 
 run: $(BUILD)/os-image.bin
-	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin
+	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET)
+
+run-capture: $(BUILD)/os-image.bin
+	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
+		-object filter-dump,id=f1,netdev=n1,file=/tmp/vertexos-net.pcap
 
 run-1080: $(BUILD)/os-image.bin
 	$(QEMU) -g 1080x720 -drive format=raw,file=$(BUILD)/os-image.bin
 
 run-headless: $(BUILD)/os-image.bin
-	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin -nographic
+	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) -nographic
 
 clean:
 	rm -rf $(BUILD)

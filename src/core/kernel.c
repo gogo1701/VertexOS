@@ -17,6 +17,7 @@
 #include "bootinfo.h"
 #include "heap.h"
 #include "interrupts.h"
+#include "net.h"
 #include "paging.h"
 #include "pmm.h"
 #include "scheduler.h"
@@ -39,6 +40,7 @@ static void cli_task(void* arg) {
 static void idle_task(void* arg) {
     (void)arg;
     for (;;) {
+        net_poll();
         /* Let timer-driven preemption switch back to runnable tasks. */
         scheduler_maybe_preempt();
         interrupts_halt();
@@ -77,6 +79,7 @@ void kmain(u32 boot_video_mode, const e820_entry* e820_map, u32 e820_count) {
     keyboard_init();
     mouse_init();
     interrupts_init();
+    net_init();
     vfs_init();
     userland_seed_programs();
     commands_init();

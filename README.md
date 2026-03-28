@@ -16,7 +16,7 @@ VertexOS boots via a custom BIOS bootloader, switches to protected mode, and pro
 | Userland ELF loading | Complete |
 | Terminal UX (history/tab/editing) | Complete |
 | Serial + RTC diagnostics | Complete |
-| Networking | Planned (Phase 7) |
+| Networking | Complete |
 
 Roadmap: [TASKS.MD](TASKS.MD)
 
@@ -59,6 +59,9 @@ time
 - Shell with quoted arguments, editing, history, and tab completion
 - ELF loader and seeded sample app under /bin
 - Video mode manager with boot-applied text/graphics preference
+- RTL8139 NIC driver + polling network path
+- Minimal network stack (ARP, IPv4, ICMP, UDP, TCP parsing basics)
+- DHCP client flow and ICMP ping command
 - Power control commands: restart and shutdown
 
 ## Command Reference
@@ -104,6 +107,12 @@ Use help in the shell for full details.
 
 - restart
 - shutdown
+
+### Networking
+
+- ifconfig
+- dhcp
+- ping <ipv4> [timeout_ms]
 
 ## Video Mode Behavior
 
@@ -208,7 +217,7 @@ API references:
 ## Current Limits and Settings
 
 - 32-bit freestanding kernel build (no libc)
-- Kernel payload limit: MAX_KERNEL_BYTES=49152 in Makefile
+- Kernel payload limit: MAX_KERNEL_BYTES=53248 in Makefile
 - Disk image size: DISK_IMAGE_BYTES=33554432 in Makefile
 - If kernel grows, update both:
 1. MAX_KERNEL_BYTES in [Makefile](Makefile)
@@ -234,15 +243,21 @@ Use:
 make run-headless
 ```
 
-## Next Milestone Focus
+## Networking Notes
 
-Phase 7 networking (planned):
+Networking is implemented for QEMU user networking via RTL8139.
 
-- NIC driver for QEMU-emulated hardware
-- Minimal stack: ARP, IPv4, ICMP, UDP/TCP basics
-- DHCP client and ping tool
+- `make run` and `make run-headless` now start QEMU with an RTL8139 NIC
+- `ifconfig` prints link and IPv4 config state
+- `dhcp` requests a lease from QEMU's built-in DHCP server
+- `ping <ip>` sends one ICMP echo request
 
-Details: [TASKS.MD](TASKS.MD)
+For gateway testing in default QEMU user-net setup, try:
+
+```text
+dhcp
+ping 10.0.2.2
+```
 
 ## License
 

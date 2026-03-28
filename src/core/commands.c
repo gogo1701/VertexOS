@@ -6,6 +6,7 @@
 #include "display.h"
 #include "exec.h"
 #include "heap.h"
+#include "net.h"
 #include "panic.h"
 #include "pmm.h"
 #include "pit.h"
@@ -51,6 +52,10 @@ static void cmd_cd(const char* args);
 static void cmd_pwd(const char* args);
 static void cmd_exec(const char* args);
 static void cmd_video(const char* args);
+static void cmd_ifconfig(const char* args);
+static void cmd_dhcp(const char* args);
+static void cmd_ping(const char* args);
+static void cmd_dns(const char* args);
 
 static u8 strings_equal(const char* a, const char* b) {
     while (*a && *b) {
@@ -743,6 +748,122 @@ static void cmd_video(const char* args) {
     display_print("Usage: video [status|text|gfx|test]\n");
 }
 
+static u8 parse_u32_arg(const char* s, u32* out_value) {
+    u32 v = 0;
+    u32 i = 0;
+
+    if (!s || !s[0]) {
+        return 0;
+    }
+
+    while (s[i]) {
+        if (s[i] < '0' || s[i] > '9') {
+            return 0;
+        }
+        v = v * 10u + (u32)(s[i] - '0');
+        i++;
+    }
+
+    *out_value = v;
+    return 1;
+}
+
+static void cmd_ifconfig(const char* args) {
+    (void)args;
+    net_print_config();
+}
+
+static void cmd_dhcp(const char* args) {
+    (void)args;
+
+    if (!net_is_ready()) {
+        display_print("dhcp: network link is down\n");
+        return;
+    }
+
+    display_print("dhcp: requesting lease...\n");
+    if (!net_dhcp_request()) {
+        display_print("dhcp: failed to acquire lease\n");
+        return;
+    }
+
+    display_print("dhcp: lease acquired\n");
+    net_print_config();
+}
+
+static void cmd_ping(const char* args) {
+    char ip_text[32];
+    char timeout_text[16];
+    u32 ip;
+    u32 timeout_ms = 1000u;
+    u32 rtt;
+
+    if (!read_arg(&args, ip_text, sizeof(ip_text)) || !ip_text[0]) {
+        display_print("Usage: ping <ipv4> [timeout_ms]\n");
+        return;
+    }
+
+    if (!net_parse_ipv4(ip_text, &ip)) {
+        display_print("ping: invalid ipv4 address\n");
+        return;
+    }
+
+    if (read_arg(&args, timeout_text, sizeof(timeout_text)) && timeout_text[0]) {
+        if (!parse_u32_arg(timeout_text, &timeout_ms)) {
+            display_print("ping: invalid timeout\n");
+            return;
+        }
+    }
+
+    display_print("ping: sending to ");
+    display_print(ip_text);
+    display_put_char('\n');
+
+    if (!net_ping(ip, timeout_ms, &rtt)) {
+        display_print("ping: timeout or network error\n");
+        return;
+    }
+
+    display_print("ping reply: ");
+    display_print_num(rtt, 10);
+    display_print(" ms\n");
+}
+
+static void cmd_dns(const char* args) {
+    char host[128];
+    char timeout_text[16];
+    char ip_text[16];
+    u32 ip;
+    u32 timeout_ms = 1500u;
+
+    if (!read_arg(&args, host, sizeof(host)) || !host[0]) {
+        display_print("Usage: dns <hostname|ipv4> [timeout_ms]\n");
+        return;
+    }
+
+    if (read_arg(&args, timeout_text, sizeof(timeout_text)) && timeout_text[0]) {
+        if (!parse_u32_arg(timeout_text, &timeout_ms)) {
+            display_print("dns: invalid timeout\n");
+            return;
+        }
+    }
+
+    display_print("dns: resolving ");
+    display_print(host);
+    display_put_char('\n');
+
+    if (!net_resolve_ipv4(host, timeout_ms, &ip)) {
+        display_print("dns: resolve failed\n");
+        return;
+    }
+
+    net_format_ipv4(ip, ip_text, sizeof(ip_text));
+    display_print(host);
+    display_print(" -> ");
+    display_print(ip_text);
+    display_put_char('\n');
+}
+
 void commands_init(void) {
     command_register_full("help", "help [command]", "Show command list or command help", cmd_help);
     command_register_full("clear", "clear", "Clear the screen", cmd_clear);
@@ -769,4 +890,8 @@ void commands_init(void) {
     command_register_full("pwd", "pwd", "Print current directory", cmd_pwd);
     command_register_full("exec", "exec <elf-path>", "Load and run 32-bit ELF from disk", cmd_exec);
     command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
+    command_register_full("ifconfig", "ifconfig", "Show network interface and IP configuration", cmd_ifconfig);
+    command_register_full("dhcp", "dhcp", "Request an IPv4 lease using DHCP", cmd_dhcp);
+    command_register_full("ping", "ping <ipv4> [timeout_ms]", "Send one ICMP echo request", cmd_ping);
+    command_register_full("dns", "dns <hostname|ipv4> [timeout_ms]", "Resolve hostname to IPv4 (A record)", cmd_dns);
 }
