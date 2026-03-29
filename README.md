@@ -98,6 +98,7 @@ Use help in the shell for full details.
 ### Program and video
 
 - exec <elf-path>
+- edit <path>
 - video status
 - video text
 - video gfx

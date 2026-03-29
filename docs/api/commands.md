@@ -165,6 +165,7 @@ static void cmd_myfile(const char* args) {
 | `cd`      | `cd [path]`                          | Change directory |
 | `pwd`     | `pwd`                                | Print working directory |
 | `exec`    | `exec <elf-path>`                    | Load and run ELF |
+| `edit`    | `edit <path>`                        | Open console code editor |
 | `video`   | `video [status\|text\|gfx\|test …]` | Video mode control |
 | `ifconfig`| `ifconfig`                            | Show NIC/IP/DHCP configuration |
 | `dhcp`    | `dhcp`                                | Request a DHCP lease |

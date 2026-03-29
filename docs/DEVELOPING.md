@@ -202,6 +202,31 @@ never yields will starve the keyboard handler and the CLI.
 
 ---
 
+## Console text editor
+
+Use the built-in editor from the shell:
+
+```text
+edit <path>
+```
+
+Core controls:
+
+- Arrow keys: move cursor
+- `Tab`: insert 4 spaces
+- `Enter`: new line with auto-indent copied from current line
+- `Backspace` / `Delete`: remove text
+- `F2`: save
+- `F10`: quit (asks before discarding unsaved changes)
+- `Esc`: quick menu (`s` save, `a` save-as, `q` quit)
+
+Notes:
+
+- The v1 editor is intentionally bounded to 8 KiB per file.
+- It is optimized for fast code notes/config edits inside the OS shell.
+
+---
+
 ## Common APIs quick-reference
 
 | Task | Header | Key functions |

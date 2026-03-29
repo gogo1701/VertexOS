@@ -90,8 +90,8 @@ Definition of done:
 - ping works to gateway/host
 
 ## Phase 8 - Hardening and Quality
-- [ ] Unit-style tests for kernel subsystems where possible
-- [ ] Integration tests in QEMU scripts
+- [x] Unit-style tests for kernel subsystems where possible
+- [x] Integration tests in QEMU scripts
 - [ ] Static analysis and warning-free build
 - [ ] Crash dump/log format for postmortem debugging
 

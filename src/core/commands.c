@@ -4,6 +4,7 @@
 
 #include "commands.h"
 #include "display.h"
+#include "editor.h"
 #include "exec.h"
 #include "heap.h"
 #include "net.h"
@@ -26,6 +27,7 @@ typedef struct {
 
 static command_entry commands[MAX_COMMANDS];
 static u32 command_count_val = 0;
+static sfs_node_info ls_entries_buf[32];
 
 static void cmd_help(const char* args);
 static void cmd_clear(const char* args);
@@ -51,6 +53,7 @@ static void cmd_mv(const char* args);
 static void cmd_cd(const char* args);
 static void cmd_pwd(const char* args);
 static void cmd_exec(const char* args);
+static void cmd_edit(const char* args);
 static void cmd_video(const char* args);
 static void cmd_ifconfig(const char* args);
 static void cmd_dhcp(const char* args);
@@ -234,6 +237,22 @@ static u8 copy_file(const char* src, const char* dst) {
     vfs_close(in_fd);
     vfs_close(out_fd);
     return 1;
+}
+
+static void print_name_bounded(const char* name) {
+    u32 i;
+
+    if (!name) {
+        return;
+    }
+
+    for (i = 0; i < 31u && name[i]; i++) {
+        char c = name[i];
+        if (c < 32 || c > 126) {
+            c = '?';
+        }
+        display_put_char(c);
+    }
 }
 
 static void cmd_help(const char* args) {
@@ -460,7 +479,6 @@ static void cmd_syscall(const char* args) {
 
 static void cmd_ls(const char* args) {
     char path[64];
-    sfs_node_info entries[32];
     u32 i;
     u32 count;
 
@@ -469,17 +487,17 @@ static void cmd_ls(const char* args) {
         path[1] = '\0';
     }
 
-    count = vfs_list(path, entries, 32);
+    count = vfs_list(path, ls_entries_buf, 32);
     for (i = 0; i < count; i++) {
-        display_print(entries[i].type == SFS_TYPE_DIR ? "d" : "-");
-        display_print((entries[i].perm & SFS_PERM_READ) ? "r" : "-");
-        display_print((entries[i].perm & SFS_PERM_WRITE) ? "w" : "-");
-        display_print((entries[i].perm & SFS_PERM_EXEC) ? "x" : "-");
+        display_print(ls_entries_buf[i].type == SFS_TYPE_DIR ? "d" : "-");
+        display_print((ls_entries_buf[i].perm & SFS_PERM_READ) ? "r" : "-");
+        display_print((ls_entries_buf[i].perm & SFS_PERM_WRITE) ? "w" : "-");
+        display_print((ls_entries_buf[i].perm & SFS_PERM_EXEC) ? "x" : "-");
         display_print(" ");
-        display_print(entries[i].name);
-        if (entries[i].type == SFS_TYPE_FILE) {
+        print_name_bounded(ls_entries_buf[i].name);
+        if (ls_entries_buf[i].type == SFS_TYPE_FILE) {
             display_print(" (");
-            display_print_num(entries[i].size, 10);
+            display_print_num(ls_entries_buf[i].size, 10);
             display_print("B)");
         }
         display_put_char('\n');
@@ -658,6 +676,19 @@ static void cmd_exec(const char* args) {
     if (!exec_run_elf(path)) {
         display_print("exec failed\n");
     }
+}
+
+static void cmd_edit(const char* args) {
+    char path[64];
+
+    if (!read_arg(&args, path, sizeof(path)) || !path[0]) {
+        display_print("Usage: edit <path>\n");
+        display_print("NOTE: Editor is a WIP feature. Expect bugs.\n");
+        return;
+    }
+
+    display_print("[WIP] Opening editor...\n");
+    editor_open(path);
 }
 
 static void cmd_video(const char* args) {
@@ -889,6 +920,7 @@ void commands_init(void) {
     command_register_full("cd", "cd [path]", "Change current directory", cmd_cd);
     command_register_full("pwd", "pwd", "Print current directory", cmd_pwd);
     command_register_full("exec", "exec <elf-path>", "Load and run 32-bit ELF from disk", cmd_exec);
+    command_register_full("edit", "edit <path> (WIP)", "Open console code editor (work in progress)", cmd_edit);
     command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
     command_register_full("ifconfig", "ifconfig", "Show network interface and IP configuration", cmd_ifconfig);
     command_register_full("dhcp", "dhcp", "Request an IPv4 lease using DHCP", cmd_dhcp);

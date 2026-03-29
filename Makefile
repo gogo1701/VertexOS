@@ -17,7 +17,7 @@ CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra
 CFLAGS_USER=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2
 LDFLAGS=-m elf_i386 -nostdlib -T boot/kernel.ld
 LDFLAGS_USER=-m elf_i386 -nostdlib -T user/user.ld
-MAX_KERNEL_BYTES=65536
+MAX_KERNEL_BYTES=98304
 DISK_IMAGE_BYTES=33554432
 
 BUILD=build
@@ -26,7 +26,7 @@ BOOT_DIR=boot
 USER_DIR=user
 
 # Source files grouped by subsystem
-CORE_SRCS  = $(addprefix $(SRC_DIR)/core/,    kernel.c cli.c commands.c panic.c)
+CORE_SRCS  = $(addprefix $(SRC_DIR)/core/,    kernel.c cli.c commands.c editor.c panic.c)
 DRIVER_SRCS= $(addprefix $(SRC_DIR)/drivers/, ata.c blockdev.c interrupts.c keyboard.c mouse.c pic.c pit.c power.c rtc.c serial.c pci.c rtl8139.c net.c)
 FS_SRCS    = $(addprefix $(SRC_DIR)/fs/,      simplefs.c vfs.c)
 MEM_SRCS   = $(addprefix $(SRC_DIR)/mem/,     bootinfo.c heap.c paging.c pmm.c)
@@ -108,6 +108,21 @@ run-1080: $(BUILD)/os-image.bin
 
 run-headless: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) -nographic
+
+# Phase 8: Tests and quality checks
+test: $(BUILD)/os-image.bin
+	@echo "Running kernel integration tests..."
+	@bash tests/run-kernel-tests.sh
+
+check: $(BUILD)/os-image.bin
+	@echo "=== Build Quality Checks ==="
+	@echo "1. Checking for compiler warnings..."
+	@make clean > /dev/null 2>&1 && make 2>&1 | grep -i "warning" || echo "✓ No warnings detected"
+	@echo "2. Build size check..."
+	@du -h $(BUILD)/os-image.bin
+	@echo "3. Kernel size check..."
+	@du -h $(BUILD)/kernel.elf
+	@echo "Quality checks complete."
 
 clean:
 	rm -rf $(BUILD)

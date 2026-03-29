@@ -6,7 +6,8 @@ ORG 0x7C00
 
 KERNEL_SEGMENT   equ 0x1000
 KERNEL_OFFSET    equ 0x0000
-KERNEL_SECTORS   equ 128
+KERNEL_SECTORS   equ 192
+KERNEL_START_LBA equ 1
 
 E820_BUFFER      equ 0x5000
 E820_COUNT_ADDR  equ 0x4FF0
@@ -26,34 +27,29 @@ start:
 
     mov [boot_drive], dl
 
-    cmp byte [video_mode_pref], 1
-    jne .set_text_mode
-    mov ax, 0x0013
-    int 0x10
-    jmp .video_mode_done
-
-.set_text_mode:
+    ; Set video mode based on saved preference (stored in boot sector).
+    ; 0 = text mode (0x03), 1 = graphics mode (0x13)
+    movzx ax, byte [video_mode_pref]
+    cmp al, 1
+    je .set_graphics
+    
+    ; Default to text mode
     mov ax, 0x0003
     int 0x10
-
-.video_mode_done:
-
+    jmp .video_ready
+    
+.set_graphics:
+    ; Try to set graphics mode (VGA mode 0x13: 320x200, 256 colors)
+    mov ax, 0x0013
+    int 0x10
+    
+.video_ready:
     call detect_memory_map
 
     mov si, msg_loading
     call print_string
 
-    mov ax, KERNEL_SEGMENT
-    mov es, ax
-    mov bx, KERNEL_OFFSET
-
-    mov ah, 0x02
-    mov al, KERNEL_SECTORS
-    mov ch, 0x00
-    mov cl, 0x02
-    mov dh, 0x00
-    mov dl, [boot_drive]
-    int 0x13
+    call read_kernel_lba
     jc disk_error
 
     cli
@@ -85,9 +81,74 @@ print_string:
 .done:
     ret
 
+read_kernel_lba:
+    mov word [read_remaining], KERNEL_SECTORS
+    mov word [read_segment], KERNEL_SEGMENT
+    mov word [dap_offset], KERNEL_OFFSET
+    mov dword [dap_lba_lo], KERNEL_START_LBA
+    mov dword [dap_lba_hi], 0
+
+.chunk_loop:
+    cmp word [read_remaining], 0
+    je .ok
+
+    mov ax, [read_remaining]
+    cmp ax, 127
+    jbe .chunk_set
+    mov ax, 127
+
+.chunk_set:
+    mov [dap_count], ax
+    mov ax, [read_segment]
+    mov [dap_segment], ax
+
+    mov si, dap
+    mov ah, 0x42
+    mov dl, [boot_drive]
+    int 0x13
+    jc .fail
+
+    mov ax, [dap_count]
+    sub word [read_remaining], ax
+
+    xor eax, eax
+    mov ax, [dap_count]
+    add dword [dap_lba_lo], eax
+    adc dword [dap_lba_hi], 0
+
+    shl ax, 5
+    add word [read_segment], ax
+
+    jmp .chunk_loop
+
+.ok:
+    clc
+    ret
+
+.fail:
+    stc
+    ret
+
 boot_drive db 0
 msg_loading db "Loading C kernel...", 0x0D, 0x0A, 0
 msg_disk_error db "Disk read error", 0x0D, 0x0A, 0
+
+dap:
+    db 16
+    db 0
+dap_count:
+    dw 0
+dap_offset:
+    dw 0
+dap_segment:
+    dw 0
+dap_lba_lo:
+    dd 0
+dap_lba_hi:
+    dd 0
+
+read_remaining dw 0
+read_segment dw 0
 
 gdt_start:
 gdt_null:

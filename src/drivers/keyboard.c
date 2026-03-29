@@ -112,6 +112,16 @@ void keyboard_irq_handler(void) {
         return;
     }
 
+    if (scancode == 0x3C) {
+        kb_buffer_push(KEY_F2);
+        return;
+    }
+
+    if (scancode == 0x44) {
+        kb_buffer_push(KEY_F10);
+        return;
+    }
+
     key = (s32)scancode_to_ascii(scancode);
     if (key) {
         kb_buffer_push(key);
