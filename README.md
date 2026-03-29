@@ -26,7 +26,7 @@ Roadmap: [TASKS.MD](TASKS.MD)
 
 ```bash
 sudo apt update
-sudo apt install -y nasm gcc binutils qemu-system-x86 genisoimage
+sudo apt install -y nasm gcc binutils qemu-system-x86 genisoimage  # genisoimage (or mkisofs on some distros)
 ```
 
 ### 2) Build and run
