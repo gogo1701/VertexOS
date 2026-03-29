@@ -112,8 +112,8 @@ iso: $(BUILD)/vertexos.iso
 run: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET)
 
-run-iso: $(BUILD)/vertexos.iso
-	$(QEMU) -drive file=$(BUILD)/vertexos.iso,format=raw,media=cdrom -boot d $(QEMU_NET)
+run-iso: $(BUILD)/vertexos.iso $(BUILD)/os-image.bin
+	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin,if=ide,index=0 -drive file=$(BUILD)/vertexos.iso,format=raw,media=cdrom -boot d $(QEMU_NET)
 
 run-capture: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
