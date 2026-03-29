@@ -7,7 +7,8 @@ ORG 0x7C00
 KERNEL_SEGMENT   equ 0x1000
 KERNEL_OFFSET    equ 0x0000
 KERNEL_SECTORS   equ 192
-KERNEL_START_LBA equ 1
+KERNEL_FIRST_READ_SECTORS equ 127
+KERNEL_SECOND_READ_SECTORS equ (KERNEL_SECTORS - KERNEL_FIRST_READ_SECTORS)
 
 E820_BUFFER      equ 0x5000
 E820_COUNT_ADDR  equ 0x4FF0
@@ -49,7 +50,17 @@ start:
     mov si, msg_loading
     call print_string
 
+    mov al, [boot_drive]
+    cmp al, 0x80
+    jb .read_chs
+
     call read_kernel_lba
+    jmp .read_done
+
+.read_chs:
+    call read_kernel_chs
+
+.read_done:
     jc disk_error
 
     cli
@@ -81,26 +92,61 @@ print_string:
 .done:
     ret
 
-read_kernel_lba:
-    mov word [read_remaining], KERNEL_SECTORS
-    mov word [read_segment], KERNEL_SEGMENT
-    mov word [dap_offset], KERNEL_OFFSET
-    mov dword [dap_lba_lo], KERNEL_START_LBA
-    mov dword [dap_lba_hi], 0
+read_kernel_chs:
+    mov ax, KERNEL_SEGMENT
+    mov es, ax
+    xor ch, ch
+    xor dh, dh
+    mov cl, 2
+    mov si, KERNEL_SECTORS
 
-.chunk_loop:
-    cmp word [read_remaining], 0
+.sector_loop:
+    cmp si, 0
     je .ok
 
-    mov ax, [read_remaining]
-    cmp ax, 127
-    jbe .chunk_set
-    mov ax, 127
+    mov bx, KERNEL_OFFSET
 
-.chunk_set:
-    mov [dap_count], ax
-    mov ax, [read_segment]
-    mov [dap_segment], ax
+    mov ah, 0x02
+    mov al, 0x01
+    mov dl, [boot_drive]
+    int 0x13
+    jc .fail
+
+    ; Advance destination by one sector (512 bytes -> 0x20 paragraphs)
+    mov ax, es
+    add ax, 0x20
+    mov es, ax
+    dec si
+
+    ; Advance CHS for 1.44MB floppy geometry (18 sectors/track, 2 heads)
+    inc cl
+    cmp cl, 19
+    jb .sector_loop
+
+    mov cl, 1
+    inc dh
+    cmp dh, 2
+    jb .sector_loop
+
+    xor dh, dh
+    inc ch
+    jmp .sector_loop
+
+.ok:
+    clc
+    ret
+
+.fail:
+    stc
+    ret
+
+read_kernel_lba:
+    ; First chunk: read 127 sectors from LBA 1
+    mov word [dap_count], KERNEL_FIRST_READ_SECTORS
+    mov word [dap_offset], KERNEL_OFFSET
+    mov word [dap_segment], KERNEL_SEGMENT
+    mov dword [dap_lba_lo], 1
+    mov dword [dap_lba_hi], 0
 
     mov si, dap
     mov ah, 0x42
@@ -108,20 +154,19 @@ read_kernel_lba:
     int 0x13
     jc .fail
 
-    mov ax, [dap_count]
-    sub word [read_remaining], ax
+    ; Second chunk: read the remaining sectors from LBA 128
+    mov word [dap_count], KERNEL_SECOND_READ_SECTORS
+    mov word [dap_offset], KERNEL_OFFSET
+    mov word [dap_segment], KERNEL_SEGMENT + (KERNEL_FIRST_READ_SECTORS * 32)
+    mov dword [dap_lba_lo], 1 + KERNEL_FIRST_READ_SECTORS
+    mov dword [dap_lba_hi], 0
 
-    xor eax, eax
-    mov ax, [dap_count]
-    add dword [dap_lba_lo], eax
-    adc dword [dap_lba_hi], 0
+    mov si, dap
+    mov ah, 0x42
+    mov dl, [boot_drive]
+    int 0x13
+    jc .fail
 
-    shl ax, 5
-    add word [read_segment], ax
-
-    jmp .chunk_loop
-
-.ok:
     clc
     ret
 
@@ -146,9 +191,6 @@ dap_lba_lo:
     dd 0
 dap_lba_hi:
     dd 0
-
-read_remaining dw 0
-read_segment dw 0
 
 gdt_start:
 gdt_null:
