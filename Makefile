@@ -4,6 +4,7 @@ LD=ld
 OBJCOPY=objcopy
 QEMU=/usr/bin/qemu-system-i386
 QEMU_NET=-netdev user,id=n1 -device rtl8139,netdev=n1
+MKISOFS := $(shell if command -v genisoimage >/dev/null 2>&1; then echo genisoimage; elif command -v mkisofs >/dev/null 2>&1; then echo mkisofs; fi)
 
 CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2 \
        -Iinclude \
@@ -96,8 +97,22 @@ $(BUILD)/os-image.bin: $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	cat $(BUILD)/boot.bin $(BUILD)/kernel.bin > $(BUILD)/os-image.bin
 	truncate -s $(DISK_IMAGE_BYTES) $(BUILD)/os-image.bin
 
+$(BUILD)/vertexos_floppy.img: $(BUILD)/os-image.bin | $(BUILD)
+	cp $(BUILD)/os-image.bin $(BUILD)/vertexos_floppy.img
+
+$(BUILD)/vertexos.iso: $(BUILD)/vertexos_floppy.img | $(BUILD)
+	mkdir -p $(BUILD)/iso
+	cp $(BUILD)/vertexos_floppy.img $(BUILD)/iso/
+	@if [ -z "$(MKISOFS)" ]; then echo "Install genisoimage or mkisofs to build ISO" && false; fi
+	$(MKISOFS) -o $(BUILD)/vertexos.iso -b vertexos_floppy.img -c boot.catalog -R -J $(BUILD)/iso
+
+iso: $(BUILD)/vertexos.iso
+
 run: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET)
+
+run-iso: $(BUILD)/vertexos.iso $(BUILD)/os-image.bin
+	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin,if=ide,index=0 -drive file=$(BUILD)/vertexos.iso,format=raw,media=cdrom -boot d $(QEMU_NET)
 
 run-capture: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
