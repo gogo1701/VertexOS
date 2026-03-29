@@ -169,3 +169,4 @@ static void cmd_myfile(const char* args) {
 | `ifconfig`| `ifconfig`                            | Show NIC/IP/DHCP configuration |
 | `dhcp`    | `dhcp`                                | Request a DHCP lease |
 | `ping`    | `ping <ipv4> [timeout_ms]`            | Send one ICMP echo request |
+| `dns`     | `dns <hostname\|ipv4> [timeout_ms]`  | Resolve hostname to IPv4 (A record) |

@@ -113,6 +113,7 @@ Use help in the shell for full details.
 - ifconfig
 - dhcp
 - ping <ipv4> [timeout_ms]
+- dns <hostname|ipv4> [timeout_ms]
 
 ## Video Mode Behavior
 
@@ -214,10 +215,15 @@ API references:
 - [docs/api/exec.md](docs/api/exec.md)
 - [docs/api/drivers.md](docs/api/drivers.md)
 
+Guides:
+
+- [docs/DEVELOPING.md](docs/DEVELOPING.md)
+- [docs/guides/creating-commands-and-apps.md](docs/guides/creating-commands-and-apps.md)
+
 ## Current Limits and Settings
 
 - 32-bit freestanding kernel build (no libc)
-- Kernel payload limit: MAX_KERNEL_BYTES=53248 in Makefile
+- Kernel payload limit: MAX_KERNEL_BYTES=65536 in Makefile
 - Disk image size: DISK_IMAGE_BYTES=33554432 in Makefile
 - If kernel grows, update both:
 1. MAX_KERNEL_BYTES in [Makefile](Makefile)
@@ -251,6 +257,7 @@ Networking is implemented for QEMU user networking via RTL8139.
 - `ifconfig` prints link and IPv4 config state
 - `dhcp` requests a lease from QEMU's built-in DHCP server
 - `ping <ip>` sends one ICMP echo request
+- `dns <host>` resolves an A record using the DHCP-provided DNS server
 
 For gateway testing in default QEMU user-net setup, try:
 

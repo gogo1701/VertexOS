@@ -22,7 +22,7 @@
 #define ARP_OP_REQUEST 1u
 #define ARP_OP_REPLY   2u
 
-#define NET_DEBUG 1
+#define NET_DEBUG 0
 
 typedef struct {
     u8 dst[6];

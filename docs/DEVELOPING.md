@@ -1,9 +1,9 @@
 # Developer Guide — Extending VertexOS
 
 This guide covers the most common extension tasks a new developer will want
-to do: adding a shell command, writing a user-mode program, and adding a
-new background task.  Read the per-subsystem API files in `docs/api/` for
-full reference.
+to do: adding shell commands, writing custom ELF apps, extending syscalls,
+and wiring new background tasks. Read the per-subsystem API files in
+`docs/api/` for full reference.
 
 ---
 
@@ -126,12 +126,14 @@ Add `$(BUILD)/user_myapp_elf.o` to the `$(BUILD)/kernel.elf` linker line.
 extern u8 _binary_build_user_myapp_elf_start[];
 extern u8 _binary_build_user_myapp_elf_end[];
 
-seed_program(
-    "/bin/myapp.elf",
-    _binary_build_user_myapp_elf_start,
-    (u32)(_binary_build_user_myapp_elf_end -
-          _binary_build_user_myapp_elf_start)
-);
+{
+    s32 fd = vfs_open("/bin/myapp.elf", VFS_O_WRITE | VFS_O_CREATE | VFS_O_TRUNC);
+    if (fd >= 0) {
+        u32 size = (u32)(_binary_build_user_myapp_elf_end - _binary_build_user_myapp_elf_start);
+        (void)vfs_write(fd, _binary_build_user_myapp_elf_start, size);
+        vfs_close(fd);
+    }
+}
 ```
 
 ### 4. Run from the shell
@@ -141,6 +143,21 @@ seed_program(
 ```
 
 See [docs/api/exec.md](api/exec.md) for full details.
+
+### 5. Add a command to launch your app quickly (optional)
+
+If you want a short alias instead of typing `exec /bin/myapp.elf` each time,
+add a command handler in `src/core/commands.c`:
+
+```c
+static void cmd_myapp(const char* args) {
+    (void)args;
+    (void)exec_run_elf("/bin/myapp.elf");
+}
+
+/* inside commands_init() */
+command_register_full("myapp", "myapp", "Run /bin/myapp.elf", cmd_myapp);
+```
 
 ---
 
@@ -207,12 +224,35 @@ never yields will starve the keyboard handler and the CLI.
 make              # build the full OS image
 make run          # build and launch in QEMU
 make run-headless # build and launch with serial on stdout
+make run-capture  # launch and dump traffic to /tmp/vertexos-net.pcap
 make clean        # remove all build artefacts
 ```
 
 The disk image is padded to **32 MiB** so the VFS has plenty of space.
-The kernel image is padded to **48 KiB**; if you grow it past that, increase
+The kernel image is padded to **64 KiB**; if you grow it past that, increase
 `MAX_KERNEL_BYTES` in the Makefile and `KERNEL_SECTORS` in `boot/boot.asm`.
+
+---
+
+## New implementation notes
+
+### Network commands and stack
+
+- Shell commands: `ifconfig`, `dhcp`, `ping`, `dns`
+- Driver path: `rtl8139` (NIC) + `net` (ARP/IPv4/ICMP/UDP/DHCP/DNS)
+- In command code, always check `net_is_ready()` before network operations.
+- Keep driver debug logs disabled by default:
+    - `#define NET_DEBUG 0` in `src/drivers/net.c`
+    - `#define RTL8139_DEBUG 0` in `src/drivers/rtl8139.c`
+
+### Command metadata and parser behavior
+
+- Register commands with `command_register_full(name, usage, summary, func)`.
+- `help` output is generated from this metadata automatically.
+- The argument helpers support quoted tokens for paths/text with spaces.
+
+For a dedicated hands-on walkthrough, see
+[docs/guides/creating-commands-and-apps.md](guides/creating-commands-and-apps.md).
 
 ---
 

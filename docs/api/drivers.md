@@ -8,6 +8,9 @@ The only driver APIs that are commonly needed in new code are
 [Serial](#serial) for early/debug logging and
 [RTC](#rtc-real-time-clock) for reading the current time.
 
+For network-facing features, use the higher-level network API documented in
+[Network Stack](#network-stack-net) rather than talking to the NIC directly.
+
 ---
 
 ## ATA PIO Disk Driver
@@ -111,6 +114,92 @@ char keyboard_read_char(void);   /* blocks; returns ASCII only      */
 
 `keyboard_read_char()` is a convenience wrapper for commands that only
 need printable characters.
+
+---
+
+## RTL8139 NIC
+
+> Header: `include/drivers/rtl8139.h`
+
+```c
+typedef void (*rtl8139_rx_callback)(const u8* frame, u32 len);
+
+u8 rtl8139_init(rtl8139_rx_callback rx_cb);
+u8 rtl8139_is_up(void);
+const u8* rtl8139_mac(void);
+u8 rtl8139_send(const void* frame, u32 len);
+void rtl8139_poll(void);
+```
+
+Low-level Ethernet driver for the QEMU RTL8139 device.
+
+- `rtl8139_init()` probes PCI, configures RX/TX rings, and installs the receive callback.
+- `rtl8139_poll()` handles pending RX/TX status in polling mode.
+- `rtl8139_send()` transmits a raw Ethernet frame.
+
+You typically should not call this from command code. Use `net_*` APIs instead.
+
+### Debug log toggle
+
+The NIC driver has a compile-time debug switch in `src/drivers/rtl8139.c`:
+
+```c
+#define RTL8139_DEBUG 0
+```
+
+Set to `1` only when diagnosing low-level NIC bring-up issues.
+
+---
+
+## Network Stack (net)
+
+> Header: `include/drivers/net.h`
+
+```c
+typedef struct {
+    u8 mac[6];
+    u32 ip;
+    u32 subnet;
+    u32 gateway;
+    u32 dns;
+    u8 link_up;
+    u8 dhcp_configured;
+} net_config;
+
+void net_init(void);
+void net_poll(void);
+u8 net_is_ready(void);
+
+const net_config* net_get_config(void);
+void net_print_config(void);
+
+u8 net_dhcp_request(void);
+u8 net_ping(u32 target_ip, u32 timeout_ms, u32* out_rtt_ms);
+u8 net_resolve_ipv4(const char* host, u32 timeout_ms, u32* out_ip);
+
+u8 net_parse_ipv4(const char* text, u32* out_ip);
+void net_format_ipv4(u32 ip, char* out, u32 out_size);
+```
+
+This module provides the command-facing networking surface (ARP, IPv4, ICMP,
+UDP, DHCP, DNS resolve).
+
+### Typical flow in shell commands
+
+1. Call `net_is_ready()` to check link status.
+2. Call `net_dhcp_request()` to obtain IP configuration.
+3. Use `net_ping()` for reachability tests.
+4. Use `net_resolve_ipv4()` for hostname to IPv4 resolution.
+
+### Debug log toggle
+
+The network stack also has a compile-time debug switch in `src/drivers/net.c`:
+
+```c
+#define NET_DEBUG 0
+```
+
+Set to `1` only for packet flow debugging.
 
 ---
 

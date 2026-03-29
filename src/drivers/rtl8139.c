@@ -26,7 +26,7 @@
 #define CR_RESET     0x10
 #define CR_RX_EMPTY  0x01
 
-#define RTL8139_DEBUG 1
+#define RTL8139_DEBUG 0
 
 #define RX_STATUS_OK 0x0001u
 
