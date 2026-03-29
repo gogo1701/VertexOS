@@ -97,9 +97,8 @@ $(BUILD)/os-image.bin: $(BUILD)/boot.bin $(BUILD)/kernel.bin
 	cat $(BUILD)/boot.bin $(BUILD)/kernel.bin > $(BUILD)/os-image.bin
 	truncate -s $(DISK_IMAGE_BYTES) $(BUILD)/os-image.bin
 
-$(BUILD)/vertexos_floppy.img: $(BUILD)/boot.bin $(BUILD)/kernel.bin | $(BUILD)
-	cat $(BUILD)/boot.bin $(BUILD)/kernel.bin > $(BUILD)/vertexos_floppy.img
-	truncate -s 1474560 $(BUILD)/vertexos_floppy.img
+$(BUILD)/vertexos_floppy.img: $(BUILD)/os-image.bin | $(BUILD)
+	cp $(BUILD)/os-image.bin $(BUILD)/vertexos_floppy.img
 
 $(BUILD)/vertexos.iso: $(BUILD)/vertexos_floppy.img | $(BUILD)
 	mkdir -p $(BUILD)/iso
