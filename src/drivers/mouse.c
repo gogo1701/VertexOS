@@ -17,8 +17,8 @@
 #define GFX_BUTTON_W 80
 #define GFX_BUTTON_H 16
 
-static volatile s32 g_mouse_x = FB_WIDTH / 2;
-static volatile s32 g_mouse_y = FB_HEIGHT / 2;
+static volatile s32 g_mouse_x = 160;
+static volatile s32 g_mouse_y = 100;
 static volatile u8 g_mouse_buttons = 0;
 static volatile u8 g_mouse_enabled = 0;
 static s32 g_mouse_prev_x = -1;
@@ -87,13 +87,11 @@ static u8 mouse_read_data(void) {
 }
 
 static u8 mouse_get_framebuffer_pixel(s32 x, s32 y) {
-    volatile u8* fb = (volatile u8*)0xA0000;
-    return fb[y * FB_WIDTH + x];
+    return framebuffer_get_pixel((u32)x, (u32)y);
 }
 
 static void mouse_set_framebuffer_pixel(s32 x, s32 y, u8 color) {
-    volatile u8* fb = (volatile u8*)0xA0000;
-    fb[y * FB_WIDTH + x] = color;
+    framebuffer_set_pixel((u32)x, (u32)y, color);
 }
 
 static void mouse_restore_pointer(void) {
@@ -107,7 +105,7 @@ static void mouse_restore_pointer(void) {
         for (col = 0; col < MOUSE_CURSOR_SIZE; col++) {
             s32 x = g_mouse_prev_x + (s32)col;
             s32 y = g_mouse_prev_y + (s32)row;
-            if (x < 0 || x >= (s32)FB_WIDTH || y < 0 || y >= (s32)FB_HEIGHT) {
+            if (x < 0 || x >= (s32)framebuffer_width() || y < 0 || y >= (s32)framebuffer_height()) {
                 continue;
             }
             mouse_set_framebuffer_pixel(x, y,
@@ -127,7 +125,7 @@ static void mouse_save_region(s32 x_start, s32 y_start) {
         for (col = 0; col < MOUSE_CURSOR_SIZE; col++) {
             s32 x = x_start + (s32)col;
             s32 y = y_start + (s32)row;
-            if (x < 0 || x >= (s32)FB_WIDTH || y < 0 || y >= (s32)FB_HEIGHT) {
+            if (x < 0 || x >= (s32)framebuffer_width() || y < 0 || y >= (s32)framebuffer_height()) {
                 g_mouse_prev_buffer[row * MOUSE_CURSOR_SIZE + col] = 0;
             } else {
                 g_mouse_prev_buffer[row * MOUSE_CURSOR_SIZE + col] =
@@ -152,8 +150,8 @@ void mouse_refresh_cursor(void) {
 static void mouse_draw_pointer(void) {
     mouse_restore_pointer();
 
-    if (g_mouse_x < 0 || g_mouse_x >= (s32)FB_WIDTH ||
-        g_mouse_y < 0 || g_mouse_y >= (s32)FB_HEIGHT) {
+    if (g_mouse_x < 0 || g_mouse_x >= (s32)framebuffer_width() ||
+        g_mouse_y < 0 || g_mouse_y >= (s32)framebuffer_height()) {
         return;
     }
 
@@ -164,7 +162,7 @@ static void mouse_draw_pointer(void) {
         for (col = 0; col < MOUSE_CURSOR_SIZE; col++) {
             s32 x = g_mouse_x + (s32)col;
             s32 y = g_mouse_y + (s32)row;
-            if (x < 0 || x >= (s32)FB_WIDTH || y < 0 || y >= (s32)FB_HEIGHT) {
+            if (x < 0 || x >= (s32)framebuffer_width() || y < 0 || y >= (s32)framebuffer_height()) {
                 continue;
             }
             mouse_set_framebuffer_pixel(x, y, 0u);
@@ -203,8 +201,8 @@ static void mouse_enable_device(void) {
 }
 
 void mouse_init(void) {
-    g_mouse_x = FB_WIDTH / 2;
-    g_mouse_y = FB_HEIGHT / 2;
+    g_mouse_x = (s32)(framebuffer_width() / 2u);
+    g_mouse_y = (s32)(framebuffer_height() / 2u);
     g_mouse_buttons = 0;
     g_mouse_phase = 0;
     g_mouse_prev_valid = 0;
@@ -227,14 +225,14 @@ static void mouse_process_packet(void) {
 
     if (g_mouse_x < 0) {
         g_mouse_x = 0;
-    } else if (g_mouse_x >= FB_WIDTH - MOUSE_CURSOR_SIZE) {
-        g_mouse_x = FB_WIDTH - MOUSE_CURSOR_SIZE;
+    } else if (g_mouse_x >= (s32)framebuffer_width() - MOUSE_CURSOR_SIZE) {
+        g_mouse_x = (s32)framebuffer_width() - MOUSE_CURSOR_SIZE;
     }
 
     if (g_mouse_y < 0) {
         g_mouse_y = 0;
-    } else if (g_mouse_y >= FB_HEIGHT - MOUSE_CURSOR_SIZE) {
-        g_mouse_y = FB_HEIGHT - MOUSE_CURSOR_SIZE;
+    } else if (g_mouse_y >= (s32)framebuffer_height() - MOUSE_CURSOR_SIZE) {
+        g_mouse_y = (s32)framebuffer_height() - MOUSE_CURSOR_SIZE;
     }
 
     g_mouse_buttons = status & 0x07;

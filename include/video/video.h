@@ -36,6 +36,20 @@ typedef enum {
     VIDEO_MODE_GRAPHICS = 1   /* 320x200 256-colour VGA mode 13h        */
 } video_mode;
 
+typedef enum {
+    VIDEO_RES_320X200 = 0,
+    VIDEO_RES_640X480 = 1,
+    VIDEO_RES_800X600 = 2
+} video_resolution;
+
+typedef struct {
+    u32 fb_phys;
+    u32 width;
+    u32 height;
+    u32 pitch;
+    u8 bpp;
+} video_fb_info;
+
 /*
  * video_init - Initialise the video subsystem for the current session.
  *
@@ -43,7 +57,7 @@ typedef enum {
  *
  * Should be called before display_init().
  */
-void video_init(video_mode initial_mode);
+void video_init(u32 boot_video_state);
 
 /*
  * video_get_mode - Return the video mode active in the current session.
@@ -58,6 +72,9 @@ video_mode video_get_mode(void);
  * @return: "text" or "graphics".  Never NULL.
  */
 const char* video_mode_name(video_mode mode);
+video_resolution video_get_resolution(void);
+const char* video_resolution_name(video_resolution resolution);
+const video_fb_info* video_get_fb_info(void);
 
 /*
  * video_get_boot_preference - Read the saved next-boot mode from disk.
@@ -70,7 +87,8 @@ const char* video_mode_name(video_mode mode);
  * @return: 1 if a valid preference was found, 0 if unset or disk error.
  */
 u8 video_get_boot_preference(video_mode* out_mode);
-	u8 video_get_boot_overlay_preference(u8* out_enabled);
+u8 video_get_boot_resolution_preference(video_resolution* out_resolution);
+u8 video_get_boot_overlay_preference(u8* out_enabled);
 
 /*
  * video_set_boot_preference - Persist a next-boot mode preference to disk.
@@ -84,6 +102,7 @@ u8 video_get_boot_preference(video_mode* out_mode);
  * @return: 1 on success, 0 if the disk write fails.
  */
 u8 video_set_boot_preference(video_mode mode);
+u8 video_set_boot_resolution_preference(video_resolution resolution);
 
 u8 video_set_boot_overlay_preference(u8 enabled);
 

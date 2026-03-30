@@ -47,4 +47,14 @@ void serial_write_char(char c);
  */
 void serial_write(const char* s);
 
+/*
+ * serial_write_hex32 - Write a 32-bit value as "0xXXXXXXXX\n" to COM1.
+ */
+void serial_write_hex32(u32 val);
+
+/*
+ * serial_write_dec - Write a 32-bit value as a decimal number to COM1.
+ */
+void serial_write_dec(u32 val);
+
 #endif /* SERIAL_H */

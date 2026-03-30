@@ -126,6 +126,11 @@ run-1080: $(BUILD)/os-image.bin
 run-headless: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) -nographic
 
+run-debug: $(BUILD)/os-image.bin
+	@echo "Serial log -> /tmp/vertexos.log  (Ctrl+C to stop QEMU)"
+	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
+		-serial file:/tmp/vertexos.log
+
 # Phase 8: Tests and quality checks
 test: $(BUILD)/os-image.bin
 	@echo "Running kernel integration tests..."

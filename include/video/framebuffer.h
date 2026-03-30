@@ -21,16 +21,17 @@
 
 #include "types.h"
 
-#define FB_WIDTH  320  /* Framebuffer width in pixels  */
-#define FB_HEIGHT 200  /* Framebuffer height in pixels */
-
 /*
  * framebuffer_init - Prepare the framebuffer module.
  *
- * Stores the base address (0xA0000) and clears the screen to black.
- * Must be called after entering mode 13h.
+ * Reads current mode metadata and stores runtime framebuffer geometry.
  */
 void framebuffer_init(void);
+
+volatile u8* framebuffer_base(void);
+u32 framebuffer_width(void);
+u32 framebuffer_height(void);
+u32 framebuffer_pitch(void);
 
 /*
  * framebuffer_clear - Fill the entire screen with a single colour.
@@ -42,7 +43,7 @@ void framebuffer_clear(u8 color);
 /*
  * framebuffer_put_pixel - Set a single pixel.
  *
- * Coordinates outside the FB_WIDTH x FB_HEIGHT bounds are silently
+ * Coordinates outside the current framebuffer bounds are silently
  * ignored.
  *
  * @x:     Horizontal position (0 = left).
@@ -63,5 +64,8 @@ void framebuffer_put_pixel(u32 x, u32 y, u8 color);
  * @color: 8-bit VGA palette index.
  */
 void framebuffer_fill_rect(u32 x, u32 y, u32 w, u32 h, u8 color);
+
+u8 framebuffer_get_pixel(u32 x, u32 y);
+void framebuffer_set_pixel(u32 x, u32 y, u8 color);
 
 #endif /* FRAMEBUFFER_H */

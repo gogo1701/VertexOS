@@ -14,6 +14,10 @@ E820_BUFFER      equ 0x5000
 E820_COUNT_ADDR  equ 0x4FF0
 E820_MAX_ENTRIES equ 32
 
+VIDEO_STATE_MODE_GRAPHICS equ 0x01
+VIDEO_STATE_RES_640x480   equ 0x02
+VIDEO_STATE_RES_800x600   equ 0x04
+
 CODE_SEG         equ 0x08
 DATA_SEG         equ 0x10
 
@@ -28,27 +32,50 @@ start:
 
     mov [boot_drive], dl
 
-    ; Set video mode based on saved preference (stored in boot sector).
-    ; 0 = text mode (0x03), 1 = graphics mode (0x13)
-    movzx ax, byte [video_mode_pref]
-    cmp al, 1
-    je .set_graphics
-    
-    ; Default to text mode
+    ; Set video mode based on saved preference + resolution flags.
+    mov byte [effective_video_state], 0
+    cmp byte [video_mode_pref], 1
+    jne .set_text
+
+    mov al, [boot_flags]
+    and al, 0x06
+    cmp al, VIDEO_STATE_RES_640x480
+    je .set_640x480
+    cmp al, VIDEO_STATE_RES_800x600
+    je .set_800x600
+    jmp .set_320x200
+
+.set_text:
     mov ax, 0x0003
     int 0x10
+    mov byte [effective_video_state], 0
     jmp .video_ready
-    
-.set_graphics:
-    ; Try to set graphics mode (VGA mode 0x13: 320x200, 256 colors)
+
+.set_320x200:
     mov ax, 0x0013
     int 0x10
-    
+    mov byte [effective_video_state], VIDEO_STATE_MODE_GRAPHICS
+    jmp .video_ready
+
+.set_640x480:
+    mov ax, 0x4F02
+    mov bx, 0x4101
+    int 0x10
+    cmp ax, 0x004F
+    jne .set_320x200
+    mov byte [effective_video_state], VIDEO_STATE_MODE_GRAPHICS | VIDEO_STATE_RES_640x480
+    jmp .video_ready
+
+.set_800x600:
+    mov ax, 0x4F02
+    mov bx, 0x4103
+    int 0x10
+    cmp ax, 0x004F
+    jne .set_320x200
+    mov byte [effective_video_state], VIDEO_STATE_MODE_GRAPHICS | VIDEO_STATE_RES_800x600
+
 .video_ready:
     call detect_memory_map
-
-    mov si, msg_loading
-    call print_string
 
     mov al, [boot_drive]
     cmp al, 0x80
@@ -175,8 +202,8 @@ read_kernel_lba:
     ret
 
 boot_drive db 0
-msg_loading db "Loading C kernel...", 0x0D, 0x0A, 0
-msg_disk_error db "Disk read error", 0x0D, 0x0A, 0
+effective_video_state db 0
+msg_disk_error db "Disk err", 0x0A, 0
 
 dap:
     db 16
@@ -218,7 +245,7 @@ protected_mode:
     ; Pass boot memory info to kernel entry in registers.
     mov ebx, E820_BUFFER
     movzx ecx, word [E820_COUNT_ADDR]
-    movzx edx, byte [video_mode_pref]
+    movzx edx, byte [effective_video_state]
 
     mov eax, KERNEL_SEGMENT * 16
     jmp eax

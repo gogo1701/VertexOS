@@ -58,3 +58,31 @@ void serial_write(const char* s) {
         s++;
     }
 }
+
+void serial_write_hex32(u32 val) {
+    static const char hex[] = "0123456789ABCDEF";
+    char buf[11];
+    int i;
+    buf[0] = '0'; buf[1] = 'x';
+    for (i = 0; i < 8; i++) {
+        buf[2 + i] = hex[(val >> (28 - i * 4)) & 0xFu];
+    }
+    buf[10] = '\0';
+    serial_write(buf);
+}
+
+void serial_write_dec(u32 val) {
+    char buf[12];
+    char* p = buf + 11;
+    *p = '\0';
+    if (val == 0) {
+        serial_write_char('0');
+        return;
+    }
+    while (val > 0) {
+        p--;
+        *p = (char)('0' + (val % 10u));
+        val /= 10u;
+    }
+    serial_write(p);
+}

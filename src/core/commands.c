@@ -55,6 +55,7 @@ static void cmd_pwd(const char* args);
 static void cmd_exec(const char* args);
 static void cmd_edit(const char* args);
 static void cmd_video(const char* args);
+static void cmd_resolution(const char* args);
 static void cmd_ifconfig(const char* args);
 static void cmd_dhcp(const char* args);
 static void cmd_ping(const char* args);
@@ -695,15 +696,28 @@ static void cmd_video(const char* args) {
     char mode[16];
     char subarg[16];
     video_mode pref;
+    video_resolution current_res = video_get_resolution();
+    video_resolution next_res;
+    u8 has_next_res = video_get_boot_resolution_preference(&next_res);
 
     if (!read_arg(&args, mode, sizeof(mode)) || !mode[0] || strings_equal(mode, "status")) {
         display_print("video current: ");
         display_print(video_mode_name(video_get_mode()));
+        if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+            display_print(" (");
+            display_print(video_resolution_name(current_res));
+            display_put_char(')');
+        }
         display_put_char('\n');
 
         if (video_get_boot_preference(&pref)) {
             display_print("video next boot: ");
             display_print(video_mode_name(pref));
+            if (pref == VIDEO_MODE_GRAPHICS && has_next_res) {
+                display_print(" (");
+                display_print(video_resolution_name(next_res));
+                display_put_char(')');
+            }
             display_put_char('\n');
         }
         return;
@@ -772,11 +786,67 @@ static void cmd_video(const char* args) {
             display_print("video: save failed\n");
             return;
         }
-        display_print("video: graphics saved for next boot\n");
+        if (has_next_res) {
+            display_print("video: graphics saved for next boot (");
+            display_print(video_resolution_name(next_res));
+            display_print(")\n");
+        } else {
+            display_print("video: graphics saved for next boot\n");
+        }
         return;
     }
 
     display_print("Usage: video [status|text|gfx|test]\n");
+}
+
+static void cmd_resolution(const char* args) {
+    char value[24];
+    video_mode boot_mode;
+    video_resolution current = video_get_resolution();
+    video_resolution next;
+
+    if (!read_arg(&args, value, sizeof(value)) || !value[0] || strings_equal(value, "status")) {
+        display_print("resolution current: ");
+        display_print(video_resolution_name(current));
+        if (video_get_mode() != VIDEO_MODE_GRAPHICS) {
+            display_print(" (text mode active)");
+        }
+        display_put_char('\n');
+
+        if (video_get_boot_resolution_preference(&next)) {
+            display_print("resolution next boot: ");
+            display_print(video_resolution_name(next));
+            if (video_get_boot_preference(&boot_mode) && boot_mode == VIDEO_MODE_TEXT) {
+                display_print(" (video text selected)");
+            }
+            display_put_char('\n');
+        }
+        return;
+    }
+
+    if (strings_equal(value, "320x200")) {
+        next = VIDEO_RES_320X200;
+    } else if (strings_equal(value, "640x480")) {
+        next = VIDEO_RES_640X480;
+    } else if (strings_equal(value, "800x600")) {
+        next = VIDEO_RES_800X600;
+    } else {
+        display_print("Usage: resolution [status|320x200|640x480|800x600]\n");
+        return;
+    }
+
+    if (!video_set_boot_resolution_preference(next)) {
+        display_print("resolution: save failed\n");
+        return;
+    }
+    if (!video_set_boot_preference(VIDEO_MODE_GRAPHICS)) {
+        display_print("resolution: save failed\n");
+        return;
+    }
+
+    display_print("resolution: ");
+    display_print(video_resolution_name(next));
+    display_print(" saved for next boot (restart required)\n");
 }
 
 static u8 parse_u32_arg(const char* s, u32* out_value) {
@@ -922,6 +992,7 @@ void commands_init(void) {
     command_register_full("exec", "exec <elf-path>", "Load and run 32-bit ELF from disk", cmd_exec);
     command_register_full("edit", "edit <path> (WIP)", "Open console code editor (work in progress)", cmd_edit);
     command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
+    command_register_full("resolution", "resolution [status|320x200|640x480|800x600]", "Set next-boot graphics resolution", cmd_resolution);
     command_register_full("ifconfig", "ifconfig", "Show network interface and IP configuration", cmd_ifconfig);
     command_register_full("dhcp", "dhcp", "Request an IPv4 lease using DHCP", cmd_dhcp);
     command_register_full("ping", "ping <ipv4> [timeout_ms]", "Send one ICMP echo request", cmd_ping);

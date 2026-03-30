@@ -103,6 +103,7 @@ Use help in the shell for full details.
 - video text
 - video gfx
 - video test [on|off|status]
+- resolution [status|320x200|640x480|800x600]
 
 ### Power
 
@@ -121,6 +122,7 @@ Use help in the shell for full details.
 Video switching is intentionally boot-applied for reliability.
 
 - video text and video gfx store next-boot preference in the boot sector
+- resolution stores next-boot graphics resolution in the boot sector
 - Reboot is required for mode changes to take effect
 - video test controls only the graphics diagnostics overlay in graphics mode
 
