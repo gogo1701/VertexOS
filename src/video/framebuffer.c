@@ -1,6 +1,7 @@
 #include "framebuffer.h"
 #include "video.h"
 #include "serial.h"
+#include "io.h"
 
 static volatile u8* g_fb = (u8*)0xA0000;
 static u32 g_width = 320u;
@@ -99,4 +100,26 @@ u8 framebuffer_get_pixel(u32 x, u32 y) {
 
 void framebuffer_set_pixel(u32 x, u32 y, u8 color) {
     framebuffer_put_pixel(x, y, color);
+}
+
+void framebuffer_wait_vsync(void) {
+    /* Wait for vertical blank by polling VGA Input Status Register (port 0x3DA) */
+    /* Bit 3 indicates vertical retrace (vblank) */
+    u8 status;
+    
+    /* Wait until NOT in vblank */
+    while (1) {
+        status = io_inb(0x3DAu);
+        if ((status & 0x08u) == 0u) {
+            break;
+        }
+    }
+    
+    /* Wait until IN vblank */
+    while (1) {
+        status = io_inb(0x3DAu);
+        if ((status & 0x08u) != 0u) {
+            break;
+        }
+    }
 }

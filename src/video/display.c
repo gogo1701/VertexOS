@@ -780,6 +780,7 @@ void display_refresh(void) {
     }
 
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+        framebuffer_wait_vsync();
         gfx_render_full();
         mouse_refresh_cursor();
     } else {

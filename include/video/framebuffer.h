@@ -41,6 +41,14 @@ u32 framebuffer_pitch(void);
 void framebuffer_clear(u8 color);
 
 /*
+ * framebuffer_wait_vsync - Synchronize with display vertical retrace.
+ *
+ * Waits until the display is in vertical blank, ensuring atomic framebuffer
+ * updates that won't cause visible tearing or flickering.
+ */
+void framebuffer_wait_vsync(void);
+
+/*
  * framebuffer_put_pixel - Set a single pixel.
  *
  * Coordinates outside the current framebuffer bounds are silently

@@ -26,7 +26,7 @@ Roadmap: [TASKS.MD](TASKS.MD)
 
 ```bash
 sudo apt update
-sudo apt install -y nasm gcc binutils qemu-system-x86 genisoimage  # genisoimage (or mkisofs on some distros)
+sudo apt install -y nasm gcc binutils qemu-system-x86 genisoimage grub-mkrescue xorriso  # genisoimage (or mkisofs on some distros)
 ```
 
 ### 2) Build and run
@@ -173,8 +173,10 @@ VertexOS/
 ```bash
 make                  # build os image
 make iso              # build bootable ISO image
+make uefi-iso         # build bootable UEFI ISO image via GRUB
 make run              # run in qemu window
 make run-iso          # run ISO in qemu window
+make run-uefi         # run UEFI ISO in qemu window
 make run-headless     # run in terminal mode
 make clean            # remove build artifacts
 ```

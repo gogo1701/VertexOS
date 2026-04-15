@@ -67,4 +67,7 @@ u32 bootinfo_get_usable_regions(
     u32 max_regions
 );
 
+extern u32 bootinfo_multiboot_count;
+const e820_entry* bootinfo_parse_multiboot(u32 mb_info_addr);
+
 #endif /* BOOTINFO_H */

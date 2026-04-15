@@ -5,6 +5,8 @@ OBJCOPY=objcopy
 QEMU=/usr/bin/qemu-system-i386
 QEMU_NET=-netdev user,id=n1 -device rtl8139,netdev=n1
 MKISOFS := $(shell if command -v genisoimage >/dev/null 2>&1; then echo genisoimage; elif command -v mkisofs >/dev/null 2>&1; then echo mkisofs; fi)
+GRUB_MKRESCUE := $(shell if command -v grub-mkrescue >/dev/null 2>&1; then echo grub-mkrescue; fi)
+XORRISO := $(shell if command -v xorriso >/dev/null 2>&1; then echo xorriso; fi)
 
 CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2 \
        -Iinclude \
@@ -108,6 +110,17 @@ $(BUILD)/vertexos.iso: $(BUILD)/vertexos_floppy.img | $(BUILD)
 	@if [ -z "$(MKISOFS)" ]; then echo "Install genisoimage or mkisofs to build ISO" && false; fi
 	$(MKISOFS) -o $(BUILD)/vertexos.iso -b vertexos_floppy.img -c boot.catalog -R -J $(BUILD)/iso
 
+$(BUILD)/vertexos-uefi.iso: $(BUILD)/kernel.elf $(BOOT_DIR)/grub.cfg | $(BUILD)
+	rm -rf $(BUILD)/grub
+	mkdir -p $(BUILD)/grub/boot/grub
+	cp $(BUILD)/kernel.elf $(BUILD)/grub/kernel.elf
+	cp $(BOOT_DIR)/grub.cfg $(BUILD)/grub/boot/grub/grub.cfg
+	@if [ -z "$(GRUB_MKRESCUE)" ]; then echo "Install grub-mkrescue to build a UEFI ISO" && false; fi
+	@if [ -z "$(XORRISO)" ]; then echo "Install xorriso so grub-mkrescue can build a UEFI ISO" && false; fi
+	$(GRUB_MKRESCUE) -o $(BUILD)/vertexos-uefi.iso $(BUILD)/grub
+
+uefi-iso: $(BUILD)/vertexos-uefi.iso
+
 iso: $(BUILD)/vertexos.iso
 
 run: $(BUILD)/os-image.bin
@@ -115,6 +128,9 @@ run: $(BUILD)/os-image.bin
 
 run-iso: $(BUILD)/vertexos.iso $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin,if=ide,index=0 -drive file=$(BUILD)/vertexos.iso,format=raw,media=cdrom -boot d $(QEMU_NET)
+
+run-uefi: $(BUILD)/vertexos-uefi.iso
+	qemu-system-x86_64 -cdrom $(BUILD)/vertexos-uefi.iso $(QEMU_NET)
 
 run-capture: $(BUILD)/os-image.bin
 	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
