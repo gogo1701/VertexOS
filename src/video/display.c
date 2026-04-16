@@ -780,9 +780,9 @@ void display_refresh(void) {
     }
 
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
-        framebuffer_wait_vsync();
         gfx_render_full();
         mouse_refresh_cursor();
+        framebuffer_flush();
     } else {
         text_render_full();
     }
@@ -819,10 +819,9 @@ static void scroll_if_needed(void) {
     }
 
     cursor_row = rows - 1u;
-    display_refresh();
 }
 
-void display_put_char(char c) {
+static void display_put_char_internal(char c, u8 do_refresh) {
     if (serial_is_ready()) {
         serial_write_char(c);
     }
@@ -831,7 +830,9 @@ void display_put_char(char c) {
         cursor_col = 0;
         cursor_row++;
         scroll_if_needed();
-        display_refresh();
+        if (do_refresh) {
+            display_refresh();
+        }
         return;
     }
 
@@ -840,7 +841,9 @@ void display_put_char(char c) {
             cursor_col--;
             text_cells[cursor_row * VGA_WIDTH + cursor_col] = ' ';
         }
-        display_refresh();
+        if (do_refresh) {
+            display_refresh();
+        }
         return;
     }
 
@@ -853,12 +856,23 @@ void display_put_char(char c) {
         scroll_if_needed();
     }
 
-    display_refresh();
+    if (do_refresh) {
+        display_refresh();
+    }
+}
+
+void display_put_char(char c) {
+    display_put_char_internal(c, 1u);
 }
 
 void display_print(const char* s) {
+    u8 wrote = 0u;
     while (s && *s) {
-        display_put_char(*s++);
+        display_put_char_internal(*s++, 0u);
+        wrote = 1u;
+    }
+    if (wrote) {
+        display_refresh();
     }
 }
 

@@ -2,8 +2,10 @@
 #include "video.h"
 #include "serial.h"
 #include "io.h"
+#include "heap.h"
 
 static volatile u8* g_fb = (u8*)0xA0000;
+static u8* g_back_buf = (u8*)0;
 static u32 g_width = 320u;
 static u32 g_height = 200u;
 static u32 g_pitch = 320u;
@@ -38,6 +40,15 @@ void framebuffer_init(void) {
     serial_write(" pitch=");
     serial_write_dec(g_pitch);
     serial_write_char('\n');
+
+    /* Allocate back buffer for double buffering */
+    g_back_buf = (u8*)kmalloc(g_height * g_pitch);
+    if (g_back_buf) {
+        u32 i;
+        for (i = 0; i < g_height * g_pitch; i++) {
+            g_back_buf[i] = 0u;
+        }
+    }
 }
 
 volatile u8* framebuffer_base(void) {
@@ -58,11 +69,12 @@ u32 framebuffer_pitch(void) {
 
 void framebuffer_clear(u8 color) {
     u32 y;
+    u8* dst = g_back_buf ? g_back_buf : (u8*)g_fb;
     for (y = 0; y < g_height; y++) {
         u32 x;
         u32 row = y * g_pitch;
         for (x = 0; x < g_width; x++) {
-            g_fb[row + x] = color;
+            dst[row + x] = color;
         }
     }
 }
@@ -71,7 +83,11 @@ void framebuffer_put_pixel(u32 x, u32 y, u8 color) {
     if (x >= g_width || y >= g_height) {
         return;
     }
-    g_fb[y * g_pitch + x] = color;
+    if (g_back_buf) {
+        g_back_buf[y * g_pitch + x] = color;
+    } else {
+        g_fb[y * g_pitch + x] = color;
+    }
 }
 
 void framebuffer_fill_rect(u32 x, u32 y, u32 w, u32 h, u8 color) {
@@ -95,11 +111,30 @@ u8 framebuffer_get_pixel(u32 x, u32 y) {
     if (x >= g_width || y >= g_height) {
         return 0u;
     }
+    if (g_back_buf) {
+        return g_back_buf[y * g_pitch + x];
+    }
     return g_fb[y * g_pitch + x];
 }
 
 void framebuffer_set_pixel(u32 x, u32 y, u8 color) {
     framebuffer_put_pixel(x, y, color);
+}
+
+void framebuffer_flush(void) {
+    if (!g_back_buf) {
+        return;
+    }
+    framebuffer_wait_vsync();
+    {
+        u32 i;
+        u32 total = g_height * g_pitch;
+        volatile u8* dst = g_fb;
+        const u8* src = g_back_buf;
+        for (i = 0; i < total; i++) {
+            dst[i] = src[i];
+        }
+    }
 }
 
 void framebuffer_wait_vsync(void) {

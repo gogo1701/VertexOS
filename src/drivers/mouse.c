@@ -249,6 +249,7 @@ static void mouse_process_packet(void) {
         display_set_button_pressed(pressed);
         display_handle_mouse_event(g_mouse_x, g_mouse_y, g_mouse_buttons);
         mouse_draw_pointer();
+        framebuffer_flush();
     }
 }
 

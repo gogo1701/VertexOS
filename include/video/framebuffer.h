@@ -41,6 +41,15 @@ u32 framebuffer_pitch(void);
 void framebuffer_clear(u8 color);
 
 /*
+ * framebuffer_flush - Blit the back buffer to the hardware framebuffer.
+ *
+ * Waits for vertical blank, then copies all rendered pixels to hardware
+ * in one pass, eliminating flicker caused by partial screen updates.
+ * Must be called once per frame after all rendering is complete.
+ */
+void framebuffer_flush(void);
+
+/*
  * framebuffer_wait_vsync - Synchronize with display vertical retrace.
  *
  * Waits until the display is in vertical blank, ensuring atomic framebuffer
