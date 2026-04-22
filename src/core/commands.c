@@ -830,8 +830,10 @@ static void cmd_resolution(const char* args) {
         next = VIDEO_RES_640X480;
     } else if (strings_equal(value, "800x600")) {
         next = VIDEO_RES_800X600;
+    } else if (strings_equal(value, "1024x768")) {
+        next = VIDEO_RES_1024X768;
     } else {
-        display_print("Usage: resolution [status|320x200|640x480|800x600]\n");
+        display_print("Usage: resolution [status|320x200|640x480|800x600|1024x768]\n");
         return;
     }
 
@@ -992,7 +994,7 @@ void commands_init(void) {
     command_register_full("exec", "exec <elf-path>", "Load and run 32-bit ELF from disk", cmd_exec);
     command_register_full("edit", "edit <path> (WIP)", "Open console code editor (work in progress)", cmd_edit);
     command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
-    command_register_full("resolution", "resolution [status|320x200|640x480|800x600]", "Set next-boot graphics resolution", cmd_resolution);
+    command_register_full("resolution", "resolution [status|320x200|640x480|800x600|1024x768]", "Set next-boot graphics resolution", cmd_resolution);
     command_register_full("ifconfig", "ifconfig", "Show network interface and IP configuration", cmd_ifconfig);
     command_register_full("dhcp", "dhcp", "Request an IPv4 lease using DHCP", cmd_dhcp);
     command_register_full("ping", "ping <ipv4> [timeout_ms]", "Send one ICMP echo request", cmd_ping);

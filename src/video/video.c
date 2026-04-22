@@ -49,6 +49,9 @@ static video_resolution decode_resolution_bits(u8 flags) {
     if (value == (u8)VIDEO_RES_800X600) {
         return VIDEO_RES_800X600;
     }
+    if (value == (u8)VIDEO_RES_1024X768) {
+        return VIDEO_RES_1024X768;
+    }
     return VIDEO_RES_320X200;
 }
 
@@ -58,6 +61,9 @@ static u8 encode_resolution_bits(video_resolution resolution) {
     }
     if (resolution == VIDEO_RES_800X600) {
         return (u8)(VIDEO_RES_800X600 << BOOT_FLAG_RES_SHIFT);
+    }
+    if (resolution == VIDEO_RES_1024X768) {
+        return (u8)(VIDEO_RES_1024X768 << BOOT_FLAG_RES_SHIFT);
     }
     return (u8)(VIDEO_RES_320X200 << BOOT_FLAG_RES_SHIFT);
 }
@@ -79,6 +85,14 @@ static void set_fb_defaults(video_resolution resolution) {
         g_fb_info.width = 800u;
         g_fb_info.height = 600u;
         g_fb_info.pitch = 800u;
+        return;
+    }
+
+    if (resolution == VIDEO_RES_1024X768) {
+        g_fb_info.fb_phys = discover_vbe_lfb_addr();
+        g_fb_info.width = 1024u;
+        g_fb_info.height = 768u;
+        g_fb_info.pitch = 1024u;
         return;
     }
 
@@ -152,6 +166,9 @@ const char* video_resolution_name(video_resolution resolution) {
     }
     if (resolution == VIDEO_RES_800X600) {
         return "800x600";
+    }
+    if (resolution == VIDEO_RES_1024X768) {
+        return "1024x768";
     }
     return "320x200";
 }

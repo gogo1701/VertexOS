@@ -7,7 +7,7 @@
  *
  * Available modes:
  *   VIDEO_MODE_TEXT     - VGA colour text mode (80x25, default)
- *   VIDEO_MODE_GRAPHICS - VGA mode 13h (320x200, 256 colours)
+ *   VIDEO_MODE_GRAPHICS - VBE graphics mode (highest available resolution)
  *
  * Boot flow:
  *   1. Bootloader reads the saved preference from the boot sector.
@@ -39,7 +39,8 @@ typedef enum {
 typedef enum {
     VIDEO_RES_320X200 = 0,
     VIDEO_RES_640X480 = 1,
-    VIDEO_RES_800X600 = 2
+    VIDEO_RES_800X600 = 2,
+    VIDEO_RES_1024X768 = 3
 } video_resolution;
 
 typedef struct {

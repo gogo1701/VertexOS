@@ -3,7 +3,19 @@ CC=gcc
 LD=ld
 OBJCOPY=objcopy
 QEMU=/usr/bin/qemu-system-i386
+QEMU_UEFI=qemu-system-x86_64
 QEMU_NET=-netdev user,id=n1 -device rtl8139,netdev=n1
+KVM ?= auto
+KVM_AVAILABLE := $(shell [ -r /dev/kvm ] && echo 1 || echo 0)
+
+ifeq ($(KVM),1)
+QEMU_ACCEL=-enable-kvm
+else ifeq ($(KVM),auto)
+ifeq ($(KVM_AVAILABLE),1)
+QEMU_ACCEL=-enable-kvm
+endif
+endif
+
 MKISOFS := $(shell if command -v genisoimage >/dev/null 2>&1; then echo genisoimage; elif command -v mkisofs >/dev/null 2>&1; then echo mkisofs; fi)
 GRUB_MKRESCUE := $(shell if command -v grub-mkrescue >/dev/null 2>&1; then echo grub-mkrescue; fi)
 XORRISO := $(shell if command -v xorriso >/dev/null 2>&1; then echo xorriso; fi)
@@ -124,27 +136,33 @@ uefi-iso: $(BUILD)/vertexos-uefi.iso
 iso: $(BUILD)/vertexos.iso
 
 run: $(BUILD)/os-image.bin
-	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET)
+	$(QEMU) $(QEMU_ACCEL) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET)
+
+run-kvm: $(BUILD)/os-image.bin
+	$(MAKE) KVM=1 run
+
+run-tcg: $(BUILD)/os-image.bin
+	$(MAKE) KVM=0 run
 
 run-iso: $(BUILD)/vertexos.iso $(BUILD)/os-image.bin
-	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin,if=ide,index=0 -drive file=$(BUILD)/vertexos.iso,format=raw,media=cdrom -boot d $(QEMU_NET)
+	$(QEMU) $(QEMU_ACCEL) -drive format=raw,file=$(BUILD)/os-image.bin,if=ide,index=0 -drive file=$(BUILD)/vertexos.iso,format=raw,media=cdrom -boot d $(QEMU_NET)
 
 run-uefi: $(BUILD)/vertexos-uefi.iso
-	qemu-system-x86_64 -cdrom $(BUILD)/vertexos-uefi.iso $(QEMU_NET)
+	$(QEMU_UEFI) $(QEMU_ACCEL) -cdrom $(BUILD)/vertexos-uefi.iso $(QEMU_NET)
 
 run-capture: $(BUILD)/os-image.bin
-	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
+	$(QEMU) $(QEMU_ACCEL) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
 		-object filter-dump,id=f1,netdev=n1,file=/tmp/vertexos-net.pcap
 
 run-1080: $(BUILD)/os-image.bin
-	$(QEMU) -g 1080x720 -drive format=raw,file=$(BUILD)/os-image.bin
+	$(QEMU) $(QEMU_ACCEL) -g 1080x720 -drive format=raw,file=$(BUILD)/os-image.bin
 
 run-headless: $(BUILD)/os-image.bin
-	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) -nographic
+	$(QEMU) $(QEMU_ACCEL) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) -nographic
 
 run-debug: $(BUILD)/os-image.bin
 	@echo "Serial log -> /tmp/vertexos.log  (Ctrl+C to stop QEMU)"
-	$(QEMU) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
+	$(QEMU) $(QEMU_ACCEL) -drive format=raw,file=$(BUILD)/os-image.bin $(QEMU_NET) \
 		-serial file:/tmp/vertexos.log
 
 # Phase 8: Tests and quality checks

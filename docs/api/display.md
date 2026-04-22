@@ -130,7 +130,7 @@ Use the `video test on/off` shell command rather than calling this directly.
 ```c
 typedef enum {
     VIDEO_MODE_TEXT     = 0,   /* 80x25 VGA text (default) */
-    VIDEO_MODE_GRAPHICS = 1    /* 320x200 mode 13h         */
+    VIDEO_MODE_GRAPHICS = 1    /* VBE graphics mode         */
 } video_mode;
 ```
 
@@ -186,8 +186,7 @@ Returns `"text"` or `"graphics"`.  Useful for status messages.
 Only relevant when running in `VIDEO_MODE_GRAPHICS`.
 
 ```c
-#define FB_WIDTH  320
-#define FB_HEIGHT 200
+/* Width and height come from the selected VBE mode at boot. */
 ```
 
 Pixels are 8-bit VGA palette indices.

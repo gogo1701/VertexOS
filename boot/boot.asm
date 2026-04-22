@@ -17,6 +17,7 @@ E820_MAX_ENTRIES equ 32
 VIDEO_STATE_MODE_GRAPHICS equ 0x01
 VIDEO_STATE_RES_640x480   equ 0x02
 VIDEO_STATE_RES_800x600   equ 0x04
+VIDEO_STATE_RES_1024x768  equ 0x06
 
 CODE_SEG         equ 0x08
 DATA_SEG         equ 0x10
@@ -43,18 +44,28 @@ start:
     je .set_640x480
     cmp al, VIDEO_STATE_RES_800x600
     je .set_800x600
+    cmp al, VIDEO_STATE_RES_1024x768
+    je .set_1024x768
     jmp .set_320x200
 
 .set_text:
     mov ax, 0x0003
     int 0x10
-    mov byte [effective_video_state], 0
     jmp .video_ready
 
 .set_320x200:
     mov ax, 0x0013
     int 0x10
     mov byte [effective_video_state], VIDEO_STATE_MODE_GRAPHICS
+    jmp .video_ready
+
+.set_1024x768:
+    mov ax, 0x4F02
+    mov bx, 0x4105
+    int 0x10
+    cmp ax, 0x004F
+    jne .set_800x600
+    mov byte [effective_video_state], VIDEO_STATE_MODE_GRAPHICS | VIDEO_STATE_RES_1024x768
     jmp .video_ready
 
 .set_640x480:
@@ -77,14 +88,9 @@ start:
 .video_ready:
     call detect_memory_map
 
-    mov al, [boot_drive]
-    cmp al, 0x80
-    jb .read_chs
-
     call read_kernel_lba
-    jmp .read_done
+    jnc .read_done
 
-.read_chs:
     call read_kernel_chs
 
 .read_done:
@@ -183,10 +189,8 @@ read_kernel_lba:
 
     ; Second chunk: read the remaining sectors from LBA 128
     mov word [dap_count], KERNEL_SECOND_READ_SECTORS
-    mov word [dap_offset], KERNEL_OFFSET
     mov word [dap_segment], KERNEL_SEGMENT + (KERNEL_FIRST_READ_SECTORS * 32)
     mov dword [dap_lba_lo], 1 + KERNEL_FIRST_READ_SECTORS
-    mov dword [dap_lba_hi], 0
 
     mov si, dap
     mov ah, 0x42
@@ -283,6 +287,6 @@ detect_memory_map:
     ret
 
 times 508 - ($ - $$) db 0
-video_mode_pref db 0
-boot_flags db 0
+video_mode_pref db 1
+boot_flags db 0x06
 dw 0xAA55

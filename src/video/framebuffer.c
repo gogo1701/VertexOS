@@ -9,6 +9,31 @@ static u8* g_back_buf = (u8*)0;
 static u32 g_width = 320u;
 static u32 g_height = 200u;
 static u32 g_pitch = 320u;
+static u8 g_dirty_valid = 0u;
+static u32 g_dirty_min_x = 0u;
+static u32 g_dirty_min_y = 0u;
+static u32 g_dirty_max_x = 0u;
+static u32 g_dirty_max_y = 0u;
+
+static void framebuffer_expand_dirty_rect(u32 x1, u32 y1, u32 x2, u32 y2) {
+    if (x1 >= x2 || y1 >= y2) {
+        return;
+    }
+
+    if (!g_dirty_valid) {
+        g_dirty_min_x = x1;
+        g_dirty_min_y = y1;
+        g_dirty_max_x = x2;
+        g_dirty_max_y = y2;
+        g_dirty_valid = 1u;
+        return;
+    }
+
+    if (x1 < g_dirty_min_x) g_dirty_min_x = x1;
+    if (y1 < g_dirty_min_y) g_dirty_min_y = y1;
+    if (x2 > g_dirty_max_x) g_dirty_max_x = x2;
+    if (y2 > g_dirty_max_y) g_dirty_max_y = y2;
+}
 
 void framebuffer_init(void) {
     const video_fb_info* info = video_get_fb_info();
@@ -77,6 +102,7 @@ void framebuffer_clear(u8 color) {
             dst[row + x] = color;
         }
     }
+    framebuffer_expand_dirty_rect(0u, 0u, g_width, g_height);
 }
 
 void framebuffer_put_pixel(u32 x, u32 y, u8 color) {
@@ -88,23 +114,57 @@ void framebuffer_put_pixel(u32 x, u32 y, u8 color) {
     } else {
         g_fb[y * g_pitch + x] = color;
     }
+    framebuffer_expand_dirty_rect(x, y, x + 1u, y + 1u);
 }
 
 void framebuffer_fill_rect(u32 x, u32 y, u32 w, u32 h, u8 color) {
     u32 yy;
-    u32 xx;
+    u32 x2;
+    u32 y2;
+    u8* dst = g_back_buf ? g_back_buf : (u8*)g_fb;
 
-    for (yy = 0; yy < h; yy++) {
-        if (y + yy >= g_height) {
-            break;
-        }
-        for (xx = 0; xx < w; xx++) {
-            if (x + xx >= g_width) {
-                break;
-            }
-            framebuffer_put_pixel(x + xx, y + yy, color);
+    if (x >= g_width || y >= g_height || w == 0u || h == 0u) {
+        return;
+    }
+
+    x2 = x + w;
+    y2 = y + h;
+    if (x2 > g_width) {
+        x2 = g_width;
+    }
+    if (y2 > g_height) {
+        y2 = g_height;
+    }
+
+    for (yy = y; yy < y2; yy++) {
+        u32 xx;
+        u32 row = yy * g_pitch;
+        for (xx = x; xx < x2; xx++) {
+            dst[row + xx] = color;
         }
     }
+
+    framebuffer_expand_dirty_rect(x, y, x2, y2);
+}
+
+void framebuffer_mark_dirty_rect(u32 x, u32 y, u32 w, u32 h) {
+    u32 x2;
+    u32 y2;
+
+    if (x >= g_width || y >= g_height || w == 0u || h == 0u) {
+        return;
+    }
+
+    x2 = x + w;
+    y2 = y + h;
+    if (x2 > g_width) {
+        x2 = g_width;
+    }
+    if (y2 > g_height) {
+        y2 = g_height;
+    }
+
+    framebuffer_expand_dirty_rect(x, y, x2, y2);
 }
 
 u8 framebuffer_get_pixel(u32 x, u32 y) {
@@ -125,16 +185,25 @@ void framebuffer_flush(void) {
     if (!g_back_buf) {
         return;
     }
+    if (!g_dirty_valid) {
+        return;
+    }
     framebuffer_wait_vsync();
     {
-        u32 i;
-        u32 total = g_height * g_pitch;
+        u32 y;
+        u32 copy_w = g_dirty_max_x - g_dirty_min_x;
         volatile u8* dst = g_fb;
         const u8* src = g_back_buf;
-        for (i = 0; i < total; i++) {
-            dst[i] = src[i];
+        for (y = g_dirty_min_y; y < g_dirty_max_y; y++) {
+            u32 x;
+            u32 row = y * g_pitch;
+            u32 start = row + g_dirty_min_x;
+            for (x = 0; x < copy_w; x++) {
+                dst[start + x] = src[start + x];
+            }
         }
     }
+    g_dirty_valid = 0u;
 }
 
 void framebuffer_wait_vsync(void) {

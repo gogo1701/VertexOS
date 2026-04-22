@@ -1,8 +1,8 @@
 /*
- * Linear Framebuffer (Mode 13h, 320x200 @ 8bpp)
+ * Linear Framebuffer (selected VBE mode @ 8bpp)
  *
- * Provides pixel-level access to VGA mode 13h, where each byte at
- * 0xA0000 is one 8-bit palette index covering a 320x200 grid.
+ * Provides pixel-level access to the boot-selected framebuffer, where
+ * each byte is one 8-bit palette index covering the active graphics grid.
  *
  * Palette (standard VGA 256-colour):
  *   Index 0  = black
@@ -81,6 +81,9 @@ void framebuffer_put_pixel(u32 x, u32 y, u8 color);
  * @color: 8-bit VGA palette index.
  */
 void framebuffer_fill_rect(u32 x, u32 y, u32 w, u32 h, u8 color);
+
+/* Mark a region as dirty so framebuffer_flush copies only changed pixels. */
+void framebuffer_mark_dirty_rect(u32 x, u32 y, u32 w, u32 h);
 
 u8 framebuffer_get_pixel(u32 x, u32 y);
 void framebuffer_set_pixel(u32 x, u32 y, u8 color);
