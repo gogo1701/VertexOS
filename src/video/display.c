@@ -4,8 +4,11 @@
 
 #include "display.h"
 #include "framebuffer.h"
+#include "gui.h"
 #include "io.h"
 #include "mouse.h"
+#include "pit.h"
+#include "scheduler.h"
 #include "serial.h"
 #include "video.h"
 
@@ -32,34 +35,24 @@
 #define GFX_DESKTOP_BG 1u
 
 #define WIN_DESKTOP 0
-#define WIN_TERMINAL 1
-#define WIN_SETTINGS 2
-#define WIN_COUNT 3
+#define WIN_TERMINAL_FIRST 1
+#define WIN_TERMINAL_SLOTS 3
+#define WIN_TERMINAL_LAST (WIN_TERMINAL_FIRST + WIN_TERMINAL_SLOTS - 1)
+#define WIN_SETTINGS (WIN_TERMINAL_LAST + 1)
+#define WIN_PROCESS_MANAGER (WIN_TERMINAL_LAST + 2)
+#define WIN_COUNT (WIN_PROCESS_MANAGER + 1)
 
 #define START_BTN_X 4u
 #define START_BTN_W 48u
 #define START_MENU_W 128u
 #define START_MENU_ITEM_H 14u
-#define START_MENU_ITEMS 3u
+#define START_MENU_ITEMS 4u
 
 #define THEME_COUNT 3u
 #define SETTINGS_SWATCH_W 18u
 #define SETTINGS_SWATCH_H 12u
 
-typedef struct {
-    s32 x;
-    s32 y;
-    u32 w;
-    u32 h;
-    u8 title_bg;
-    u8 body_bg;
-    u8 border;
-    const char* title;
-    u8 visible;
-    u8 is_desktop;
-    u8 is_terminal;
-    u8 is_settings;
-} gfx_window;
+typedef gui_window gfx_window;
 
 static volatile u16* const VGA = (u16*)0xB8000;
 static u32 cursor_row = 0;
@@ -86,9 +79,12 @@ static u8 g_start_menu_open = 0;
 static u8 g_active_theme = 0;
 static u8 g_taskbar_bg = 8u;
 static u8 g_taskbar_text = 0u;
+static u32 g_process_cpu_ticks[WIN_COUNT];
+static s32 g_pm_selected_index = -1;
 
 static gfx_window* terminal_window(void);
 static gfx_window* settings_window(void);
+static gfx_window* process_manager_window(void);
 
 typedef struct {
     u8 desktop_bg;
@@ -119,16 +115,22 @@ static void apply_theme(u8 theme_id) {
 
     g_windows[WIN_DESKTOP].body_bg = t->desktop_bg;
     tw = terminal_window();
-    if (tw) {
-        tw->title_bg = t->term_title;
-        tw->body_bg = t->term_body;
+    (void)tw;
+    {
+        s32 i;
+        for (i = 0; i < WIN_COUNT; i++) {
+            if (g_windows[i].role == GUI_WINDOW_ROLE_TERMINAL) {
+                g_windows[i].title_bg = t->term_title;
+                g_windows[i].body_bg = t->term_body;
+            }
+        }
     }
 
     sw = 0;
     {
         s32 i;
         for (i = 0; i < WIN_COUNT; i++) {
-            if (g_windows[i].is_settings) {
+            if (g_windows[i].role == GUI_WINDOW_ROLE_SETTINGS) {
                 sw = &g_windows[i];
                 break;
             }
@@ -139,6 +141,14 @@ static void apply_theme(u8 theme_id) {
         sw->body_bg = t->settings_body;
     }
 
+    {
+        gfx_window* pw = process_manager_window();
+        if (pw) {
+            pw->title_bg = t->settings_title;
+            pw->body_bg = t->settings_body;
+        }
+    }
+
     g_taskbar_bg = t->taskbar_bg;
     g_taskbar_text = t->desktop_bg;
     g_gfx_fg = t->text_fg;
@@ -146,22 +156,11 @@ static void apply_theme(u8 theme_id) {
 }
 
 static s32 window_index_from_ptr(gfx_window* w) {
-    s32 i;
-    for (i = 0; i < WIN_COUNT; i++) {
-        if (&g_windows[i] == w) {
-            return i;
-        }
-    }
-    return -1;
+    return gui_window_index_from_ptr(g_windows, WIN_COUNT, w);
 }
 
 static void bring_window_to_front(s32 index) {
-    while (index >= WIN_TERMINAL && index < (WIN_COUNT - 1)) {
-        gfx_window tmp = g_windows[index];
-        g_windows[index] = g_windows[index + 1];
-        g_windows[index + 1] = tmp;
-        index++;
-    }
+    gui_bring_window_to_front(g_windows, WIN_COUNT, WIN_TERMINAL_FIRST, index);
 }
 
 static u32 gfx_ui_scale(void);
@@ -190,7 +189,7 @@ static s32 start_menu_y(void) {
 static s32 settings_swatch_x(s32 i) {
     s32 widx;
     for (widx = 0; widx < WIN_COUNT; widx++) {
-        if (g_windows[widx].is_settings) {
+        if (g_windows[widx].role == GUI_WINDOW_ROLE_SETTINGS) {
             return g_windows[widx].x + (s32)(10u * gfx_ui_scale())
                    + i * ((s32)gfx_settings_swatch_width() + (s32)(8u * gfx_ui_scale()));
         }
@@ -202,7 +201,7 @@ static s32 settings_swatch_x(s32 i) {
 static s32 settings_swatch_y(void) {
     s32 widx;
     for (widx = 0; widx < WIN_COUNT; widx++) {
-        if (g_windows[widx].is_settings) {
+        if (g_windows[widx].role == GUI_WINDOW_ROLE_SETTINGS) {
             return g_windows[widx].y + (s32)(30u * gfx_ui_scale());
         }
     }
@@ -211,22 +210,20 @@ static s32 settings_swatch_y(void) {
 
 static gfx_window* terminal_window(void) {
     s32 i;
-    for (i = 0; i < WIN_COUNT; i++) {
-        if (g_windows[i].is_terminal) {
+    for (i = WIN_COUNT - 1; i >= WIN_TERMINAL_FIRST; i--) {
+        if (g_windows[i].role == GUI_WINDOW_ROLE_TERMINAL && g_windows[i].visible) {
             return &g_windows[i];
         }
     }
-    return &g_windows[WIN_TERMINAL];
+    return gui_find_window_by_role(g_windows, WIN_COUNT, GUI_WINDOW_ROLE_TERMINAL, WIN_TERMINAL_FIRST);
 }
 
 static gfx_window* settings_window(void) {
-    s32 i;
-    for (i = 0; i < WIN_COUNT; i++) {
-        if (g_windows[i].is_settings) {
-            return &g_windows[i];
-        }
-    }
-    return 0;
+    return gui_find_window_by_role(g_windows, WIN_COUNT, GUI_WINDOW_ROLE_SETTINGS, -1);
+}
+
+static gfx_window* process_manager_window(void) {
+    return gui_find_window_by_role(g_windows, WIN_COUNT, GUI_WINDOW_ROLE_PROCESS_MANAGER, -1);
 }
 
 static u32 gfx_ui_scale(void);
@@ -543,12 +540,22 @@ static void gfx_render_taskbar(void);
 static void gfx_render_window(gfx_window* window);
 static void gfx_render_terminal_content(gfx_window* window);
 static void gfx_render_settings_content(gfx_window* window);
+static void gfx_render_process_manager_content(gfx_window* window);
 static void gfx_render_start_menu(void);
 static void gfx_render_windows(void);
 static void gfx_render_scene_no_cursor(void);
 static void gfx_render_terminal_cell(gfx_window* window, u32 row, u32 col);
 static void gfx_refresh_terminal_incremental(void);
 static void clear_visible_text_dirty(void);
+static void u32_to_dec_string(u32 value, char* out, u32 out_size);
+static s32 find_hidden_terminal_slot(void);
+static u32 visible_terminal_count(void);
+static void update_process_usage_sample(void);
+static u32 build_running_process_list(s32* out_indices, u32 max_indices);
+static u8 window_close_button_hit(const gfx_window* window, s32 x, s32 y);
+static u8 process_manager_kill_button_hit(const gfx_window* window, s32 x, s32 y);
+static u8 process_manager_handle_click(gfx_window* window, s32 x, s32 y);
+static void process_manager_kill_selected(void);
 
 static void gfx_render_label(u32 x_start, u32 y_start, const char* text, u8 color) {
     const char* p = text;
@@ -558,6 +565,195 @@ static void gfx_render_label(u32 x_start, u32 y_start, const char* text, u8 colo
         x_start += advance;
         p++;
     }
+}
+
+static void u32_to_dec_string(u32 value, char* out, u32 out_size) {
+    char tmp[16];
+    u32 n = 0;
+    u32 i;
+
+    if (!out || out_size == 0u) {
+        return;
+    }
+
+    if (value == 0u) {
+        if (out_size > 1u) {
+            out[0] = '0';
+            out[1] = '\0';
+        } else {
+            out[0] = '\0';
+        }
+        return;
+    }
+
+    while (value > 0u && n < sizeof(tmp)) {
+        tmp[n++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    }
+
+    i = 0u;
+    while (n > 0u && i + 1u < out_size) {
+        out[i++] = tmp[--n];
+    }
+    out[i] = '\0';
+}
+
+static s32 find_hidden_terminal_slot(void) {
+    s32 i;
+    for (i = WIN_TERMINAL_FIRST; i <= WIN_TERMINAL_LAST; i++) {
+        if (g_windows[i].role == GUI_WINDOW_ROLE_TERMINAL && !g_windows[i].visible) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+static u32 visible_terminal_count(void) {
+    u32 count = 0u;
+    s32 i;
+    for (i = WIN_TERMINAL_FIRST; i <= WIN_TERMINAL_LAST; i++) {
+        if (g_windows[i].role == GUI_WINDOW_ROLE_TERMINAL && g_windows[i].visible) {
+            count++;
+        }
+    }
+    return count;
+}
+
+static void update_process_usage_sample(void) {
+    s32 i;
+    for (i = WIN_COUNT - 1; i >= WIN_TERMINAL_FIRST; i--) {
+        if (!g_windows[i].visible) {
+            continue;
+        }
+        if (g_windows[i].role == GUI_WINDOW_ROLE_PROCESS_MANAGER) {
+            continue;
+        }
+        if (g_windows[i].role == GUI_WINDOW_ROLE_DESKTOP) {
+            continue;
+        }
+        g_process_cpu_ticks[i]++;
+        return;
+    }
+}
+
+static u32 build_running_process_list(s32* out_indices, u32 max_indices) {
+    u32 count = 0u;
+    s32 i;
+
+    for (i = WIN_TERMINAL_FIRST; i < WIN_COUNT; i++) {
+        if (!g_windows[i].visible) {
+            continue;
+        }
+        if (g_windows[i].role == GUI_WINDOW_ROLE_PROCESS_MANAGER) {
+            continue;
+        }
+        if (count < max_indices) {
+            out_indices[count] = i;
+            count++;
+        }
+    }
+
+    return count;
+}
+
+static u8 window_close_button_hit(const gfx_window* window, s32 x, s32 y) {
+    u32 scale;
+    u32 title_h;
+    u32 close_w;
+    s32 close_x;
+    s32 close_y;
+
+    if (!window || window->role == GUI_WINDOW_ROLE_DESKTOP) {
+        return 0u;
+    }
+
+    scale = gfx_ui_scale();
+    title_h = gfx_window_title_height();
+    close_w = title_h > (4u * scale) ? (title_h - (4u * scale)) : title_h;
+    close_x = window->x + (s32)window->w - (s32)close_w - (s32)(2u * scale);
+    close_y = window->y + (s32)(2u * scale);
+
+    return (x >= close_x && x < close_x + (s32)close_w &&
+            y >= close_y && y < close_y + (s32)close_w) ? 1u : 0u;
+}
+
+static u8 process_manager_kill_button_hit(const gfx_window* window, s32 x, s32 y) {
+    u32 scale;
+    u32 btn_w;
+    u32 btn_h;
+    s32 btn_x;
+    s32 btn_y;
+
+    if (!window || window->role != GUI_WINDOW_ROLE_PROCESS_MANAGER) {
+        return 0u;
+    }
+
+    scale = gfx_ui_scale();
+    btn_w = 46u * scale;
+    btn_h = 12u * scale;
+    btn_x = window->x + (s32)(10u * scale);
+    btn_y = window->y + (s32)window->h - (s32)btn_h - (s32)(8u * scale);
+
+    return (x >= btn_x && x < btn_x + (s32)btn_w &&
+            y >= btn_y && y < btn_y + (s32)btn_h) ? 1u : 0u;
+}
+
+static void process_manager_kill_selected(void) {
+    if (g_pm_selected_index < WIN_TERMINAL_FIRST || g_pm_selected_index >= WIN_COUNT) {
+        return;
+    }
+
+    if (g_windows[g_pm_selected_index].visible) {
+        g_windows[g_pm_selected_index].visible = 0u;
+        if (g_drag_window == g_pm_selected_index) {
+            g_drag_window = -1;
+        }
+        if (g_resize_window == g_pm_selected_index) {
+            g_resize_window = -1;
+        }
+    }
+    g_pm_selected_index = -1;
+}
+
+static u8 process_manager_handle_click(gfx_window* window, s32 x, s32 y) {
+    s32 indices[WIN_COUNT];
+    u32 count;
+    u32 scale;
+    s32 list_x;
+    s32 list_y;
+    s32 list_w;
+    s32 row_h;
+    u32 i;
+
+    if (!window || window->role != GUI_WINDOW_ROLE_PROCESS_MANAGER) {
+        return 0u;
+    }
+
+    if (process_manager_kill_button_hit(window, x, y)) {
+        process_manager_kill_selected();
+        return 1u;
+    }
+
+    count = build_running_process_list(indices, WIN_COUNT);
+    scale = gfx_ui_scale();
+    list_x = window->x + (s32)(8u * scale);
+    list_y = window->y + (s32)(48u * scale);
+    list_w = (s32)window->w - (s32)(16u * scale);
+    row_h = (s32)(10u * scale);
+
+    if (x < list_x || x >= list_x + list_w || y < list_y) {
+        return 0u;
+    }
+
+    for (i = 0u; i < count; i++) {
+        s32 ry = list_y + (s32)i * row_h;
+        if (y >= ry && y < ry + row_h) {
+            g_pm_selected_index = indices[i];
+            return 1u;
+        }
+    }
+
+    return 0u;
 }
 
 static void gfx_render_taskbar(void) {
@@ -589,7 +785,7 @@ static void gfx_render_start_menu(void) {
     s32 x = (s32)gfx_start_button_x();
     s32 y = start_menu_y();
     s32 i;
-    static const char* items[START_MENU_ITEMS] = {"TERMINAL", "SETTINGS", "ABOUT"};
+    static const char* items[START_MENU_ITEMS] = {"TERMINAL", "SETTINGS", "TASKMGR", "ABOUT"};
     u32 menu_w = gfx_start_menu_width();
     u32 item_h = gfx_start_menu_item_height();
     u32 scale = gfx_ui_scale();
@@ -625,8 +821,15 @@ static void gfx_render_window(gfx_window* window) {
         u32 border = gfx_window_border_width();
         u32 title_h = gfx_window_title_height();
         u32 resize = gfx_resize_handle_size();
+        u32 scale = gfx_ui_scale();
+        u32 close_w = title_h > (4u * scale) ? (title_h - (4u * scale)) : title_h;
+        u32 close_x = (u32)(window->x + (s32)window->w - (s32)close_w - (s32)(2u * scale));
+        u32 close_y = (u32)(window->y + (s32)(2u * scale));
+        u32 line_w = scale;
+        u32 inset = scale;
+        u32 i;
 
-        if (window->is_desktop) {
+        if (window->role == GUI_WINDOW_ROLE_DESKTOP) {
             framebuffer_fill_rect(window->x, window->y, window->w, window->h, window->body_bg);
             return;
         }
@@ -655,10 +858,28 @@ static void gfx_render_window(gfx_window* window) {
 
         gfx_render_label(window->x + 4u * gfx_ui_scale(), window->y + 2u * gfx_ui_scale(), window->title, 0u);
 
-        if (window->is_terminal) {
+        framebuffer_fill_rect(close_x, close_y, close_w, close_w, 12u);
+        framebuffer_fill_rect(close_x, close_y, close_w, 1u, 15u);
+        framebuffer_fill_rect(close_x, close_y, 1u, close_w, 15u);
+        framebuffer_fill_rect(close_x, close_y + close_w - 1u, close_w, 1u, 8u);
+        framebuffer_fill_rect(close_x + close_w - 1u, close_y, 1u, close_w, 8u);
+        if (close_w > (2u * inset + 1u)) {
+            for (i = 0u; i + (2u * inset) < close_w; i++) {
+                framebuffer_fill_rect(close_x + inset + i, close_y + inset + i, line_w, line_w, 0u);
+                framebuffer_fill_rect(close_x + close_w - inset - 1u - i,
+                                      close_y + inset + i,
+                                      line_w,
+                                      line_w,
+                                      0u);
+            }
+        }
+
+        if (window->role == GUI_WINDOW_ROLE_TERMINAL) {
             gfx_render_terminal_content(window);
-        } else if (window->is_settings) {
+        } else if (window->role == GUI_WINDOW_ROLE_SETTINGS) {
             gfx_render_settings_content(window);
+        } else if (window->role == GUI_WINDOW_ROLE_PROCESS_MANAGER) {
+            gfx_render_process_manager_content(window);
         }
     }
 }
@@ -683,6 +904,115 @@ static void gfx_render_settings_content(gfx_window* window) {
     }
 
     gfx_render_label((u32)(window->x + (s32)(10u * scale)), (u32)(window->y + (s32)(52u * scale)), "CLICK SWATCH", 0u);
+}
+
+static void gfx_render_process_manager_content(gfx_window* window) {
+    s32 indices[WIN_COUNT];
+    u32 count;
+    u32 i;
+    u32 scale = gfx_ui_scale();
+    char line[56];
+    char num_buf[16];
+    u32 y = (u32)(window->y + (s32)(14u * scale));
+    u32 total_ticks = 0u;
+    u32 btn_w = 46u * scale;
+    u32 btn_h = 12u * scale;
+    u32 btn_x = (u32)(window->x + (s32)(10u * scale));
+    u32 btn_y = (u32)(window->y + (s32)window->h - (s32)btn_h - (s32)(8u * scale));
+
+    count = build_running_process_list(indices, WIN_COUNT);
+    for (i = 0u; i < count; i++) {
+        total_ticks += g_process_cpu_ticks[indices[i]];
+    }
+
+    if (g_pm_selected_index >= WIN_TERMINAL_FIRST) {
+        u8 still_visible = 0u;
+        for (i = 0u; i < count; i++) {
+            if (indices[i] == g_pm_selected_index) {
+                still_visible = 1u;
+                break;
+            }
+        }
+        if (!still_visible) {
+            g_pm_selected_index = -1;
+        }
+    }
+
+    gfx_render_label((u32)(window->x + (s32)(10u * scale)), y, "PROCESS MANAGER", 0u);
+    y += 12u * scale;
+
+    u32_to_dec_string(count, num_buf, sizeof(num_buf));
+    line[0] = '\0';
+    {
+        const char* prefix = "RUNNING: ";
+        u32 p = 0u;
+        while (prefix[p] && p + 1u < sizeof(line)) {
+            line[p] = prefix[p];
+            p++;
+        }
+        {
+            u32 n = 0u;
+            while (num_buf[n] && p + 1u < sizeof(line)) {
+                line[p++] = num_buf[n++];
+            }
+        }
+        line[p] = '\0';
+    }
+    gfx_render_label((u32)(window->x + (s32)(10u * scale)), y, line, 0u);
+    y += 12u * scale;
+
+    gfx_render_label((u32)(window->x + (s32)(10u * scale)), y, "NAME        CPU%", 0u);
+    y += 10u * scale;
+
+    for (i = 0u; i < count; i++) {
+        s32 idx = indices[i];
+        u32 usage = 0u;
+        u32 row_h = 10u * scale;
+        u32 row_x = (u32)(window->x + (s32)(8u * scale));
+        u32 row_w = window->w > (16u * scale) ? (window->w - (16u * scale)) : window->w;
+
+        if (total_ticks > 0u) {
+            usage = (g_process_cpu_ticks[idx] * 100u) / total_ticks;
+        }
+
+        if (idx == g_pm_selected_index) {
+            framebuffer_fill_rect(row_x, y - 1u, row_w, row_h, 3u);
+        }
+
+        line[0] = '\0';
+        {
+            const char* name = g_windows[idx].title ? g_windows[idx].title : "Process";
+            u32 p = 0u;
+            u32 n = 0u;
+            while (name[n] && p < 11u && p + 1u < sizeof(line)) {
+                line[p++] = name[n++];
+            }
+            while (p < 12u && p + 1u < sizeof(line)) {
+                line[p++] = ' ';
+            }
+            u32_to_dec_string(usage, num_buf, sizeof(num_buf));
+            n = 0u;
+            while (num_buf[n] && p + 1u < sizeof(line)) {
+                line[p++] = num_buf[n++];
+            }
+            if (p + 1u < sizeof(line)) {
+                line[p++] = '%';
+            }
+            line[p] = '\0';
+        }
+        gfx_render_label((u32)(window->x + (s32)(10u * scale)), y, line, 0u);
+        y += 10u * scale;
+        if (y + 12u * scale >= btn_y) {
+            break;
+        }
+    }
+
+    framebuffer_fill_rect(btn_x, btn_y, btn_w, btn_h, (g_pm_selected_index >= 0) ? 12u : 8u);
+    framebuffer_fill_rect(btn_x, btn_y, btn_w, 1u, 15u);
+    framebuffer_fill_rect(btn_x, btn_y, 1u, btn_h, 15u);
+    framebuffer_fill_rect(btn_x, btn_y + btn_h - 1u, btn_w, 1u, 0u);
+    framebuffer_fill_rect(btn_x + btn_w - 1u, btn_y, 1u, btn_h, 0u);
+    gfx_render_label(btn_x + (4u * scale), btn_y + (2u * scale), "KILL", 0u);
 }
 
 static void gfx_render_terminal_content(gfx_window* window) {
@@ -793,29 +1123,6 @@ static void gfx_render_windows(void) {
  * background window if it overlaps.  Used during window drag/resize so the
  * screen never goes fully black between frames.
  */
-static void gfx_repair_region(s32 x1, s32 y1, s32 x2, s32 y2) {
-    s32 i;
-    s32 fb_w = (s32)framebuffer_width();
-    s32 fb_h = (s32)framebuffer_height();
-
-    if (x1 < 0) x1 = 0;
-    if (y1 < 0) y1 = 0;
-    if (x2 > fb_w) x2 = fb_w;
-    if (y2 > fb_h) y2 = fb_h;
-    if (x2 <= x1 || y2 <= y1) return;
-
-    framebuffer_fill_rect((u32)x1, (u32)y1, (u32)(x2 - x1), (u32)(y2 - y1), g_gfx_bg);
-
-    for (i = 0; i < WIN_COUNT; i++) {
-        gfx_window* w = &g_windows[i];
-        if (w->visible &&
-            w->x < x2 && w->x + (s32)w->w > x1 &&
-            w->y < y2 && w->y + (s32)w->h > y1) {
-            gfx_render_window(w);
-        }
-    }
-}
-
 static void gfx_render_color_spectrum(void) {
     u32 x;
     u32 y;
@@ -939,6 +1246,10 @@ void display_init(void) {
         text_cells[i] = ' ';
         text_cells_dirty[i] = 1u;
     }
+    for (i = 0; i < WIN_COUNT; i++) {
+        g_process_cpu_ticks[i] = 0u;
+    }
+    g_pm_selected_index = -1;
 
     g_windows[WIN_DESKTOP].x = 0;
     g_windows[WIN_DESKTOP].y = 0;
@@ -949,23 +1260,33 @@ void display_init(void) {
     g_windows[WIN_DESKTOP].border = 0u;
     g_windows[WIN_DESKTOP].title = "Desktop";
     g_windows[WIN_DESKTOP].visible = 1u;
-    g_windows[WIN_DESKTOP].is_desktop = 1u;
-    g_windows[WIN_DESKTOP].is_terminal = 0u;
-    g_windows[WIN_DESKTOP].is_settings = 0u;
+    g_windows[WIN_DESKTOP].role = GUI_WINDOW_ROLE_DESKTOP;
 
-    g_windows[WIN_TERMINAL].x = (s32)(56u * gfx_ui_scale());
-    g_windows[WIN_TERMINAL].y = (s32)(28u * gfx_ui_scale());
-    g_windows[WIN_TERMINAL].w = framebuffer_width() > 128u * gfx_ui_scale() ? framebuffer_width() - 128u * gfx_ui_scale() : 160u * gfx_ui_scale();
-    g_windows[WIN_TERMINAL].h = framebuffer_height() > (96u * gfx_ui_scale() + gfx_taskbar_height())
-                                ? framebuffer_height() - (96u * gfx_ui_scale() + gfx_taskbar_height()) : 120u * gfx_ui_scale();
-    g_windows[WIN_TERMINAL].title_bg = 2u;
-    g_windows[WIN_TERMINAL].body_bg = 0u;
-    g_windows[WIN_TERMINAL].border = 15u;
-    g_windows[WIN_TERMINAL].title = "Terminal";
-    g_windows[WIN_TERMINAL].visible = 1u;
-    g_windows[WIN_TERMINAL].is_desktop = 0u;
-    g_windows[WIN_TERMINAL].is_terminal = 1u;
-    g_windows[WIN_TERMINAL].is_settings = 0u;
+    {
+        static const char* terminal_titles[WIN_TERMINAL_SLOTS] = {
+            "Terminal",
+            "Terminal 2",
+            "Terminal 3"
+        };
+        s32 i;
+        for (i = 0; i < WIN_TERMINAL_SLOTS; i++) {
+            s32 wi = WIN_TERMINAL_FIRST + i;
+            g_windows[wi].x = (s32)((56u + (u32)(i * 16)) * gfx_ui_scale());
+            g_windows[wi].y = (s32)((28u + (u32)(i * 12)) * gfx_ui_scale());
+            g_windows[wi].w = framebuffer_width() > 128u * gfx_ui_scale()
+                              ? framebuffer_width() - 128u * gfx_ui_scale()
+                              : 160u * gfx_ui_scale();
+            g_windows[wi].h = framebuffer_height() > (96u * gfx_ui_scale() + gfx_taskbar_height())
+                              ? framebuffer_height() - (96u * gfx_ui_scale() + gfx_taskbar_height())
+                              : 120u * gfx_ui_scale();
+            g_windows[wi].title_bg = 2u;
+            g_windows[wi].body_bg = 0u;
+            g_windows[wi].border = 15u;
+            g_windows[wi].title = terminal_titles[i];
+            g_windows[wi].visible = (i == 0) ? 1u : 0u;
+            g_windows[wi].role = GUI_WINDOW_ROLE_TERMINAL;
+        }
+    }
 
     g_windows[WIN_SETTINGS].x = (s32)(18u * gfx_ui_scale());
     g_windows[WIN_SETTINGS].y = (s32)(26u * gfx_ui_scale());
@@ -976,9 +1297,18 @@ void display_init(void) {
     g_windows[WIN_SETTINGS].border = 15u;
     g_windows[WIN_SETTINGS].title = "Settings";
     g_windows[WIN_SETTINGS].visible = 0u;
-    g_windows[WIN_SETTINGS].is_desktop = 0u;
-    g_windows[WIN_SETTINGS].is_terminal = 0u;
-    g_windows[WIN_SETTINGS].is_settings = 1u;
+    g_windows[WIN_SETTINGS].role = GUI_WINDOW_ROLE_SETTINGS;
+
+    g_windows[WIN_PROCESS_MANAGER].x = (s32)(34u * gfx_ui_scale());
+    g_windows[WIN_PROCESS_MANAGER].y = (s32)(34u * gfx_ui_scale());
+    g_windows[WIN_PROCESS_MANAGER].w = 164u * gfx_ui_scale();
+    g_windows[WIN_PROCESS_MANAGER].h = 112u * gfx_ui_scale();
+    g_windows[WIN_PROCESS_MANAGER].title_bg = 4u;
+    g_windows[WIN_PROCESS_MANAGER].body_bg = 7u;
+    g_windows[WIN_PROCESS_MANAGER].border = 15u;
+    g_windows[WIN_PROCESS_MANAGER].title = "Process Manager";
+    g_windows[WIN_PROCESS_MANAGER].visible = 0u;
+    g_windows[WIN_PROCESS_MANAGER].role = GUI_WINDOW_ROLE_PROCESS_MANAGER;
 
     apply_theme(0u);
     g_start_menu_open = 0u;
@@ -999,6 +1329,10 @@ void display_refresh(void) {
     }
 
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+        update_process_usage_sample();
+        if (visible_terminal_count() > 1u) {
+            terminal_force_full_redraw = 1u;
+        }
         if (terminal_force_full_redraw) {
             gfx_render_full();
             mouse_refresh_cursor();
@@ -1214,7 +1548,10 @@ void display_handle_mouse_event(s32 x, s32 y, u8 buttons) {
                 s32 item = rel / (s32)item_h;
 
                 if (item == 0) {
-                    s32 ti = window_index_from_ptr(terminal_window());
+                    s32 ti = find_hidden_terminal_slot();
+                    if (ti < 0) {
+                        ti = window_index_from_ptr(terminal_window());
+                    }
                     if (ti >= 0) {
                         g_windows[ti].visible = 1u;
                         bring_window_to_front(ti);
@@ -1225,6 +1562,13 @@ void display_handle_mouse_event(s32 x, s32 y, u8 buttons) {
                     if (si >= 0) {
                         g_windows[si].visible = 1u;
                         bring_window_to_front(si);
+                    }
+                } else if (item == 2) {
+                    gfx_window* pw = process_manager_window();
+                    s32 pi = window_index_from_ptr(pw);
+                    if (pi >= 0) {
+                        g_windows[pi].visible = 1u;
+                        bring_window_to_front(pi);
                     }
                 }
 
@@ -1243,59 +1587,87 @@ void display_handle_mouse_event(s32 x, s32 y, u8 buttons) {
         }
 
         {
-            s32 i;
-            for (i = WIN_COUNT - 1; i >= WIN_TERMINAL; i--) {
-                gfx_window* window = &g_windows[i];
-                if (!window->visible || window->is_desktop) {
-                    continue;
+            s32 hit = gui_find_topmost_visible_at(g_windows,
+                                                  WIN_COUNT,
+                                                  WIN_TERMINAL_FIRST,
+                                                  x,
+                                                  y,
+                                                  0u);
+            if (hit >= WIN_TERMINAL_FIRST) {
+                gfx_window* window = &g_windows[hit];
+
+                if (hit != WIN_COUNT - 1) {
+                    bring_window_to_front(hit);
+                    window = &g_windows[WIN_COUNT - 1];
                 }
-                if (x >= window->x && x < window->x + (s32)window->w &&
-                    y >= window->y && y < window->y + (s32)window->h) {
-                    if (window->is_settings) {
-                        s32 si;
-                        s32 sy = settings_swatch_y();
-                        for (si = 0; si < (s32)THEME_COUNT; si++) {
-                            s32 sx = settings_swatch_x(si);
-                            if (x >= sx && x < sx + (s32)swatch_w &&
-                                y >= sy && y < sy + (s32)swatch_h) {
-                                apply_theme((u8)si);
-                                mouse_hide_cursor();
-                                gfx_render_scene_no_cursor();
-                                mouse_refresh_cursor();
-                                prev_buttons = buttons;
-                                return;
-                            }
-                        }
+
+                if (window_close_button_hit(window, x, y)) {
+                    window->visible = 0u;
+                    if (window->role == GUI_WINDOW_ROLE_PROCESS_MANAGER) {
+                        g_pm_selected_index = -1;
                     }
-
-                    if (i != WIN_COUNT - 1) {
-                        bring_window_to_front(i);
-                        window = &g_windows[WIN_COUNT - 1];
+                    if (g_pm_selected_index == WIN_COUNT - 1) {
+                        g_pm_selected_index = -1;
                     }
-
-                    g_drag_window = -1;
-                    g_resize_window = -1;
-
-                    {
-                        gfx_window* selected = &g_windows[WIN_COUNT - 1];
-                        s32 resize_x = selected->x + (s32)selected->w - (s32)resize;
-                        s32 resize_y = selected->y + (s32)selected->h - (s32)resize;
-
-                        if (x >= resize_x && y >= resize_y) {
-                            g_resize_window = WIN_COUNT - 1;
-                            g_resize_offset_x = (selected->x + (s32)selected->w) - x;
-                            g_resize_offset_y = (selected->y + (s32)selected->h) - y;
-                        } else if (y < selected->y + (s32)title_h) {
-                            g_drag_window = WIN_COUNT - 1;
-                            g_drag_offset_x = x - selected->x;
-                            g_drag_offset_y = y - selected->y;
-                        }
+                    if (g_drag_window == WIN_COUNT - 1) {
+                        g_drag_window = -1;
                     }
-
+                    if (g_resize_window == WIN_COUNT - 1) {
+                        g_resize_window = -1;
+                    }
                     mouse_hide_cursor();
                     gfx_render_scene_no_cursor();
-                    break;
+                    mouse_refresh_cursor();
+                    prev_buttons = buttons;
+                    return;
                 }
+
+                if (window->role == GUI_WINDOW_ROLE_SETTINGS) {
+                    s32 si;
+                    s32 sy = settings_swatch_y();
+                    for (si = 0; si < (s32)THEME_COUNT; si++) {
+                        s32 sx = settings_swatch_x(si);
+                        if (x >= sx && x < sx + (s32)swatch_w &&
+                            y >= sy && y < sy + (s32)swatch_h) {
+                            apply_theme((u8)si);
+                            mouse_hide_cursor();
+                            gfx_render_scene_no_cursor();
+                            mouse_refresh_cursor();
+                            prev_buttons = buttons;
+                            return;
+                        }
+                    }
+                }
+
+                if (process_manager_handle_click(window, x, y)) {
+                    mouse_hide_cursor();
+                    gfx_render_scene_no_cursor();
+                    mouse_refresh_cursor();
+                    prev_buttons = buttons;
+                    return;
+                }
+
+                g_drag_window = -1;
+                g_resize_window = -1;
+
+                {
+                    gfx_window* selected = &g_windows[WIN_COUNT - 1];
+                    s32 resize_x = selected->x + (s32)selected->w - (s32)resize;
+                    s32 resize_y = selected->y + (s32)selected->h - (s32)resize;
+
+                    if (x >= resize_x && y >= resize_y) {
+                        g_resize_window = WIN_COUNT - 1;
+                        g_resize_offset_x = (selected->x + (s32)selected->w) - x;
+                        g_resize_offset_y = (selected->y + (s32)selected->h) - y;
+                    } else if (y < selected->y + (s32)title_h) {
+                        g_drag_window = WIN_COUNT - 1;
+                        g_drag_offset_x = x - selected->x;
+                        g_drag_offset_y = y - selected->y;
+                    }
+                }
+
+                mouse_hide_cursor();
+                gfx_render_scene_no_cursor();
             }
         }
     }
@@ -1305,73 +1677,41 @@ void display_handle_mouse_event(s32 x, s32 y, u8 buttons) {
         s32 new_x = x - g_drag_offset_x;
         s32 new_y = y - g_drag_offset_y;
 
-        if (new_x < 0) {
-            new_x = 0;
-        }
-        if (new_y < 0) {
-            new_y = 0;
-        }
-        if (new_x + (s32)window->w > (s32)framebuffer_width()) {
-            new_x = (s32)framebuffer_width() - (s32)window->w;
-        }
-        if (new_y + (s32)window->h > (s32)framebuffer_height() - (s32)gfx_taskbar_height()) {
-            new_y = (s32)framebuffer_height() - (s32)gfx_taskbar_height() - (s32)window->h;
-        }
+        gui_clamp_window_position(window,
+                                  &new_x,
+                                  &new_y,
+                                  framebuffer_width(),
+                                  framebuffer_height(),
+                                  gfx_taskbar_height());
 
         if (window->x != new_x || window->y != new_y) {
-            s32 old_x = window->x;
-            s32 old_y = window->y;
-            s32 dx1, dy1, dx2, dy2;
             window->x = new_x;
             window->y = new_y;
-            dx1 = old_x < new_x ? old_x : new_x;
-            dy1 = old_y < new_y ? old_y : new_y;
-            dx2 = (old_x + (s32)window->w) > (new_x + (s32)window->w)
-                  ? (old_x + (s32)window->w) : (new_x + (s32)window->w);
-            dy2 = (old_y + (s32)window->h) > (new_y + (s32)window->h)
-                  ? (old_y + (s32)window->h) : (new_y + (s32)window->h);
             mouse_hide_cursor();
-            gfx_repair_region(dx1, dy1, dx2, dy2);
-            gfx_render_window(window);
-            gfx_render_taskbar();
-            gfx_render_start_menu();
+            gfx_render_scene_no_cursor();
             mouse_refresh_cursor();
         }
     }
 
     if (g_resize_window >= 0 && (buttons & 0x01)) {
         gfx_window* window = &g_windows[g_resize_window];
-        s32 max_w = (s32)framebuffer_width() - window->x;
-        s32 max_h = (s32)framebuffer_height() - (s32)gfx_taskbar_height() - window->y;
         s32 new_w = x - window->x + g_resize_offset_x;
         s32 new_h = y - window->y + g_resize_offset_y;
 
-        if (new_w < (s32)gfx_window_min_width()) {
-            new_w = (s32)gfx_window_min_width();
-        }
-        if (new_h < (s32)gfx_window_min_height()) {
-            new_h = (s32)gfx_window_min_height();
-        }
-        if (new_w > max_w) {
-            new_w = max_w;
-        }
-        if (new_h > max_h) {
-            new_h = max_h;
-        }
+        gui_clamp_window_size(window,
+                              &new_w,
+                              &new_h,
+                              gfx_window_min_width(),
+                              gfx_window_min_height(),
+                              framebuffer_width(),
+                              framebuffer_height(),
+                              gfx_taskbar_height());
 
         if ((s32)window->w != new_w || (s32)window->h != new_h) {
-            s32 old_w = (s32)window->w;
-            s32 old_h = (s32)window->h;
-            s32 dx2, dy2;
             window->w = (u32)new_w;
             window->h = (u32)new_h;
-            dx2 = window->x + (old_w > new_w ? old_w : new_w);
-            dy2 = window->y + (old_h > new_h ? old_h : new_h);
             mouse_hide_cursor();
-            gfx_repair_region(window->x, window->y, dx2, dy2);
-            gfx_render_window(window);
-            gfx_render_taskbar();
-            gfx_render_start_menu();
+            gfx_render_scene_no_cursor();
             mouse_refresh_cursor();
         }
     }

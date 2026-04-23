@@ -148,4 +148,14 @@ const task* scheduler_current_task(void);
  */
 u32 scheduler_task_count(void);
 
+/*
+ * scheduler_get_task_info - Copy task info for a task table index.
+ *
+ * @index: Zero-based task table index in [0, scheduler_task_count()).
+ * @out:   Output task snapshot.
+ *
+ * @return: 1 if index is valid, 0 otherwise.
+ */
+u8 scheduler_get_task_info(u32 index, task* out);
+
 #endif /* SCHEDULER_H */

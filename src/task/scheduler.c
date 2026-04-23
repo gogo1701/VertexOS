@@ -162,3 +162,12 @@ const task* scheduler_current_task(void) {
 u32 scheduler_task_count(void) {
     return task_count;
 }
+
+u8 scheduler_get_task_info(u32 index, task* out) {
+    if (!out || index >= task_count) {
+        return 0;
+    }
+
+    *out = tasks[index];
+    return 1;
+}

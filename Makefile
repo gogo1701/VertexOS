@@ -47,7 +47,7 @@ DRIVER_SRCS= $(addprefix $(SRC_DIR)/drivers/, ata.c blockdev.c interrupts.c keyb
 FS_SRCS    = $(addprefix $(SRC_DIR)/fs/,      simplefs.c vfs.c)
 MEM_SRCS   = $(addprefix $(SRC_DIR)/mem/,     bootinfo.c heap.c paging.c pmm.c)
 TASK_SRCS  = $(addprefix $(SRC_DIR)/task/,    scheduler.c syscall.c)
-VIDEO_SRCS = $(addprefix $(SRC_DIR)/video/,   display.c framebuffer.c video.c)
+VIDEO_SRCS = $(addprefix $(SRC_DIR)/video/,   display.c framebuffer.c video.c gui.c)
 EXEC_SRCS  = $(addprefix $(SRC_DIR)/exec/,    exec.c userland.c)
 
 C_SOURCES=$(CORE_SRCS) $(DRIVER_SRCS) $(FS_SRCS) $(MEM_SRCS) $(TASK_SRCS) $(VIDEO_SRCS) $(EXEC_SRCS)
