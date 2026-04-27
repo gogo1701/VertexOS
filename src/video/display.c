@@ -27,7 +27,7 @@
 #define GFX_BUTTON_W 80u
 #define GFX_BUTTON_H 16u
 #define GFX_TASKBAR_HEIGHT 18u
-#define GFX_WINDOW_TITLE_H 10u
+#define GFX_WINDOW_TITLE_H 16u
 #define GFX_WINDOW_BORDER 1u
 #define GFX_WINDOW_MIN_W 72u
 #define GFX_WINDOW_MIN_H 48u
@@ -53,6 +53,39 @@
 #define SETTINGS_SWATCH_H 12u
 
 typedef gui_window gfx_window;
+
+typedef struct {
+    u16 magic;
+    u8 mode;
+    u8 charsize;
+} __attribute__((packed)) psf1_header;
+
+typedef struct {
+    u32 magic;
+    u32 version;
+    u32 header_size;
+    u32 flags;
+    u32 glyph_count;
+    u32 bytes_per_glyph;
+    u32 height;
+    u32 width;
+} __attribute__((packed)) psf2_header;
+
+typedef struct {
+    const u8* data;
+    u32 header_size;
+    u32 glyph_count;
+    u32 glyph_size;
+    u32 glyph_width;
+    u32 glyph_height;
+    u32 bytes_per_row;
+    u8 valid;
+} psf_font;
+
+extern const u8 _binary_assets_fonts_terminus_psf_start[];
+extern const u8 _binary_assets_fonts_terminus_psf_end[];
+
+static psf_font g_font = {0};
 
 static volatile u16* const VGA = (u16*)0xB8000;
 static u32 cursor_row = 0;
@@ -251,11 +284,22 @@ static u32 gfx_ui_scale(void) {
 }
 
 static u32 gfx_cell_width(void) {
-    return GFX_CELL_W * gfx_ui_scale();
+    u32 width = g_font.valid && g_font.glyph_width ? g_font.glyph_width : GFX_CELL_W;
+    return width * gfx_ui_scale();
 }
 
 static u32 gfx_cell_height(void) {
-    return GFX_CELL_H * gfx_ui_scale();
+    u32 height = g_font.valid && g_font.glyph_height ? g_font.glyph_height : GFX_CELL_H;
+    return height * gfx_ui_scale();
+}
+
+static u32 gfx_text_vertical_pad(u32 box_height) {
+    u32 font_height = gfx_cell_height();
+
+    if (box_height > font_height) {
+        return (box_height - font_height) / 2u;
+    }
+    return 0u;
 }
 
 static u32 gfx_taskbar_height(void) {
@@ -306,16 +350,106 @@ static u32 gfx_settings_swatch_height(void) {
     return SETTINGS_SWATCH_H * gfx_ui_scale();
 }
 
+static void font_load_from_memory(const u8* start, const u8* end) {
+    u32 size;
+
+    g_font.data = 0;
+    g_font.header_size = 0u;
+    g_font.glyph_count = 256u;
+    g_font.glyph_size = 8u;
+    g_font.glyph_width = GFX_CELL_W;
+    g_font.glyph_height = GFX_CELL_H;
+    g_font.bytes_per_row = 1u;
+    g_font.valid = 0u;
+
+    if (!start || !end || end <= start) {
+        return;
+    }
+
+    size = (u32)(end - start);
+    if (size < sizeof(psf1_header)) {
+        return;
+    }
+
+    if (size >= sizeof(psf2_header)) {
+        const psf2_header* psf2 = (const psf2_header*)start;
+
+        if (psf2->magic == 0x864ab572u && psf2->version == 0u &&
+            psf2->header_size >= sizeof(psf2_header) &&
+            psf2->header_size < size && psf2->glyph_count > 0u &&
+            psf2->bytes_per_glyph > 0u && psf2->height > 0u && psf2->width > 0u) {
+            u64 glyph_bytes = (u64)psf2->glyph_count * (u64)psf2->bytes_per_glyph;
+            if ((u64)psf2->header_size + glyph_bytes <= (u64)size) {
+                g_font.data = start;
+                g_font.header_size = psf2->header_size;
+                g_font.glyph_count = psf2->glyph_count;
+                g_font.glyph_size = psf2->bytes_per_glyph;
+                g_font.glyph_width = psf2->width;
+                g_font.glyph_height = psf2->height;
+                g_font.bytes_per_row = (psf2->width + 7u) / 8u;
+                if (g_font.bytes_per_row == 0u) {
+                    g_font.bytes_per_row = 1u;
+                }
+                g_font.valid = 1u;
+                return;
+            }
+        }
+    }
+
+    {
+        const psf1_header* psf1 = (const psf1_header*)start;
+        u32 glyph_count;
+
+        if (psf1->magic != 0x0436u && psf1->magic != 0x0437u) {
+            return;
+        }
+
+        glyph_count = (psf1->mode & 0x01u) ? 512u : 256u;
+        if ((u32)psf1->charsize == 0u || sizeof(psf1_header) + (u64)glyph_count * psf1->charsize > (u64)size) {
+            return;
+        }
+
+        g_font.data = start;
+        g_font.header_size = sizeof(psf1_header);
+        g_font.glyph_count = glyph_count;
+        g_font.glyph_size = psf1->charsize;
+        g_font.glyph_width = 8u;
+        g_font.glyph_height = psf1->charsize;
+        g_font.bytes_per_row = 1u;
+        g_font.valid = 1u;
+    }
+}
+
+static const u8* font_glyph_at(u32 codepoint) {
+    if (!g_font.valid || !g_font.data || g_font.glyph_size == 0u) {
+        return 0;
+    }
+
+    if (codepoint >= g_font.glyph_count) {
+        codepoint = (u32)'?';
+        if (codepoint >= g_font.glyph_count) {
+            codepoint = 0u;
+        }
+    }
+
+    return g_font.data + g_font.header_size + codepoint * g_font.glyph_size;
+}
+
 static void gfx_draw_scaled_glyph(u32 x_start, u32 y_start, const u8* glyph, u8 color) {
     u32 scale = gfx_ui_scale();
     u32 row;
 
-    for (row = 0; row < 7u; row++) {
-        u8 bits = glyph[row];
+    if (!glyph || g_font.glyph_width == 0u || g_font.glyph_height == 0u) {
+        return;
+    }
+
+    for (row = 0; row < g_font.glyph_height; row++) {
         u32 col;
 
-        for (col = 0; col < 5u; col++) {
-            if (bits & (1u << (4u - col))) {
+        for (col = 0; col < g_font.glyph_width; col++) {
+            u32 byte_index = row * g_font.bytes_per_row + (col >> 3);
+            u8 mask = (u8)(0x80u >> (col & 7u));
+            if (glyph[byte_index] & mask) {
                 framebuffer_fill_rect(
                     x_start + col * scale,
                     y_start + row * scale,
@@ -327,64 +461,6 @@ static void gfx_draw_scaled_glyph(u32 x_start, u32 y_start, const u8* glyph, u8 
         }
     }
 }
-
-static const u8 GLYPH_SPACE[7] = {0, 0, 0, 0, 0, 0, 0};
-static const u8 GLYPH_QMARK[7] = {0x0E, 0x11, 0x01, 0x06, 0x04, 0x00, 0x04};
-static const u8 GLYPH_DOT[7] = {0, 0, 0, 0, 0, 0x06, 0x06};
-static const u8 GLYPH_COMMA[7] = {0, 0, 0, 0, 0x00, 0x06, 0x04};
-static const u8 GLYPH_COLON[7] = {0, 0x06, 0x06, 0, 0x06, 0x06, 0};
-static const u8 GLYPH_SEMI[7] = {0, 0x06, 0x06, 0, 0x06, 0x04, 0};
-static const u8 GLYPH_EXCL[7] = {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04};
-static const u8 GLYPH_MINUS[7] = {0, 0, 0, 0x1F, 0, 0, 0};
-static const u8 GLYPH_PLUS[7] = {0, 0x04, 0x04, 0x1F, 0x04, 0x04, 0};
-static const u8 GLYPH_SLASH[7] = {0x01, 0x02, 0x04, 0x08, 0x10, 0, 0};
-static const u8 GLYPH_BSLASH[7] = {0x10, 0x08, 0x04, 0x02, 0x01, 0, 0};
-static const u8 GLYPH_LPAREN[7] = {0x02, 0x04, 0x08, 0x08, 0x08, 0x04, 0x02};
-static const u8 GLYPH_RPAREN[7] = {0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08};
-static const u8 GLYPH_LBRACK[7] = {0x0E, 0x08, 0x08, 0x08, 0x08, 0x08, 0x0E};
-static const u8 GLYPH_RBRACK[7] = {0x0E, 0x02, 0x02, 0x02, 0x02, 0x02, 0x0E};
-static const u8 GLYPH_LT[7] = {0x01, 0x02, 0x04, 0x08, 0x04, 0x02, 0x01};
-static const u8 GLYPH_GT[7] = {0x10, 0x08, 0x04, 0x02, 0x04, 0x08, 0x10};
-static const u8 GLYPH_EQ[7] = {0, 0x1F, 0, 0x1F, 0, 0, 0};
-static const u8 GLYPH_QUOTE[7] = {0x0A, 0x0A, 0x04, 0, 0, 0, 0};
-static const u8 GLYPH_APOS[7] = {0x04, 0x04, 0x02, 0, 0, 0, 0};
-static const u8 GLYPH_USCORE[7] = {0, 0, 0, 0, 0, 0, 0x1F};
-static const u8 GLYPH_0[7] = {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E};
-static const u8 GLYPH_1[7] = {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E};
-static const u8 GLYPH_2[7] = {0x0E, 0x11, 0x01, 0x06, 0x08, 0x10, 0x1F};
-static const u8 GLYPH_3[7] = {0x1F, 0x01, 0x02, 0x06, 0x01, 0x11, 0x0E};
-static const u8 GLYPH_4[7] = {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02};
-static const u8 GLYPH_5[7] = {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E};
-static const u8 GLYPH_6[7] = {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E};
-static const u8 GLYPH_7[7] = {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08};
-static const u8 GLYPH_8[7] = {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E};
-static const u8 GLYPH_9[7] = {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C};
-static const u8 GLYPH_A[7] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
-static const u8 GLYPH_B[7] = {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E};
-static const u8 GLYPH_C[7] = {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E};
-static const u8 GLYPH_D[7] = {0x1C, 0x12, 0x11, 0x11, 0x11, 0x12, 0x1C};
-static const u8 GLYPH_E[7] = {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F};
-static const u8 GLYPH_F[7] = {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10};
-static const u8 GLYPH_G[7] = {0x0E, 0x11, 0x10, 0x13, 0x11, 0x11, 0x0E};
-static const u8 GLYPH_H[7] = {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
-static const u8 GLYPH_I[7] = {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E};
-static const u8 GLYPH_J[7] = {0x01, 0x01, 0x01, 0x01, 0x11, 0x11, 0x0E};
-static const u8 GLYPH_K[7] = {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11};
-static const u8 GLYPH_L[7] = {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F};
-static const u8 GLYPH_M[7] = {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11};
-static const u8 GLYPH_N[7] = {0x11, 0x11, 0x19, 0x15, 0x13, 0x11, 0x11};
-static const u8 GLYPH_O[7] = {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
-static const u8 GLYPH_P[7] = {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10};
-static const u8 GLYPH_Q[7] = {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D};
-static const u8 GLYPH_R[7] = {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11};
-static const u8 GLYPH_S[7] = {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E};
-static const u8 GLYPH_T[7] = {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04};
-static const u8 GLYPH_U[7] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
-static const u8 GLYPH_V[7] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04};
-static const u8 GLYPH_W[7] = {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A};
-static const u8 GLYPH_X[7] = {0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11};
-static const u8 GLYPH_Y[7] = {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04};
-static const u8 GLYPH_Z[7] = {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F};
 
 static u32 visible_cols(void) {
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
@@ -425,77 +501,6 @@ static u32 visible_rows(void) {
         return rows > GFX_MAX_ROWS ? GFX_MAX_ROWS : rows;
     }
     return VGA_HEIGHT;
-}
-
-static char upcase(char c) {
-    if (c >= 'a' && c <= 'z') {
-        return (char)(c - ('a' - 'A'));
-    }
-    return c;
-}
-
-static const u8* glyph_for(char c) {
-    c = upcase(c);
-    switch (c) {
-        case ' ': return GLYPH_SPACE;
-        case '.': return GLYPH_DOT;
-        case ',': return GLYPH_COMMA;
-        case ':': return GLYPH_COLON;
-        case ';': return GLYPH_SEMI;
-        case '!': return GLYPH_EXCL;
-        case '-': return GLYPH_MINUS;
-        case '+': return GLYPH_PLUS;
-        case '/': return GLYPH_SLASH;
-        case '\\': return GLYPH_BSLASH;
-        case '(': return GLYPH_LPAREN;
-        case ')': return GLYPH_RPAREN;
-        case '[': return GLYPH_LBRACK;
-        case ']': return GLYPH_RBRACK;
-        case '<': return GLYPH_LT;
-        case '>': return GLYPH_GT;
-        case '=': return GLYPH_EQ;
-        case '"': return GLYPH_QUOTE;
-        case '\'': return GLYPH_APOS;
-        case '_': return GLYPH_USCORE;
-        case '?': return GLYPH_QMARK;
-        case '0': return GLYPH_0;
-        case '1': return GLYPH_1;
-        case '2': return GLYPH_2;
-        case '3': return GLYPH_3;
-        case '4': return GLYPH_4;
-        case '5': return GLYPH_5;
-        case '6': return GLYPH_6;
-        case '7': return GLYPH_7;
-        case '8': return GLYPH_8;
-        case '9': return GLYPH_9;
-        case 'A': return GLYPH_A;
-        case 'B': return GLYPH_B;
-        case 'C': return GLYPH_C;
-        case 'D': return GLYPH_D;
-        case 'E': return GLYPH_E;
-        case 'F': return GLYPH_F;
-        case 'G': return GLYPH_G;
-        case 'H': return GLYPH_H;
-        case 'I': return GLYPH_I;
-        case 'J': return GLYPH_J;
-        case 'K': return GLYPH_K;
-        case 'L': return GLYPH_L;
-        case 'M': return GLYPH_M;
-        case 'N': return GLYPH_N;
-        case 'O': return GLYPH_O;
-        case 'P': return GLYPH_P;
-        case 'Q': return GLYPH_Q;
-        case 'R': return GLYPH_R;
-        case 'S': return GLYPH_S;
-        case 'T': return GLYPH_T;
-        case 'U': return GLYPH_U;
-        case 'V': return GLYPH_V;
-        case 'W': return GLYPH_W;
-        case 'X': return GLYPH_X;
-        case 'Y': return GLYPH_Y;
-        case 'Z': return GLYPH_Z;
-        default: return GLYPH_QMARK;
-    }
 }
 
 static void update_hw_cursor(void) {
@@ -561,7 +566,10 @@ static void gfx_render_label(u32 x_start, u32 y_start, const char* text, u8 colo
     const char* p = text;
     u32 advance = gfx_cell_width();
     while (*p) {
-        gfx_draw_scaled_glyph(x_start, y_start, glyph_for(*p), color);
+        const u8* glyph = font_glyph_at((u8)*p);
+        if (glyph) {
+            gfx_draw_scaled_glyph(x_start, y_start, glyph, color);
+        }
         x_start += advance;
         p++;
     }
@@ -690,7 +698,7 @@ static u8 process_manager_kill_button_hit(const gfx_window* window, s32 x, s32 y
 
     scale = gfx_ui_scale();
     btn_w = 46u * scale;
-    btn_h = 12u * scale;
+    btn_h = gfx_cell_height();
     btn_x = window->x + (s32)(10u * scale);
     btn_y = window->y + (s32)window->h - (s32)btn_h - (s32)(8u * scale);
 
@@ -776,8 +784,8 @@ static void gfx_render_taskbar(void) {
     framebuffer_fill_rect(start_x, fb_h - 3u * scale, start_w, 1u, 8u);
     framebuffer_fill_rect(start_x + start_w - 1u, fb_h - taskbar_h + 3u * scale, 1u,
                           taskbar_h - 6u * scale, 8u);
-    gfx_render_label(12u * scale, fb_h - taskbar_h + 6u * scale, "START", g_taskbar_text);
-    gfx_render_label(fb_w - (40u * scale), fb_h - taskbar_h + 6u * scale,
+    gfx_render_label(12u * scale, fb_h - taskbar_h + gfx_text_vertical_pad(taskbar_h), "START", g_taskbar_text);
+    gfx_render_label(fb_w - (40u * scale), fb_h - taskbar_h + gfx_text_vertical_pad(taskbar_h),
                      "12:34", g_taskbar_text);
 }
 
@@ -808,7 +816,7 @@ static void gfx_render_start_menu(void) {
             framebuffer_fill_rect((u32)(x + (s32)(2u * scale)), (u32)iy,
                                   menu_w - 4u * scale, 1u, 8u);
         }
-        gfx_render_label((u32)(x + (s32)(8u * scale)), (u32)(iy + (s32)(4u * scale)), items[i], 0u);
+        gfx_render_label((u32)(x + (s32)(8u * scale)), (u32)(iy + (s32)gfx_text_vertical_pad(item_h)), items[i], 0u);
     }
 }
 
@@ -856,7 +864,7 @@ static void gfx_render_window(gfx_window* window) {
             framebuffer_fill_rect(rx + resize - 1u, ry, 1u, resize, 8u);
         }
 
-        gfx_render_label(window->x + 4u * gfx_ui_scale(), window->y + 2u * gfx_ui_scale(), window->title, 0u);
+        gfx_render_label(window->x + 4u * gfx_ui_scale(), window->y + gfx_text_vertical_pad(title_h), window->title, 0u);
 
         framebuffer_fill_rect(close_x, close_y, close_w, close_w, 12u);
         framebuffer_fill_rect(close_x, close_y, close_w, 1u, 15u);
@@ -890,8 +898,9 @@ static void gfx_render_settings_content(gfx_window* window) {
     u32 scale = gfx_ui_scale();
     u32 swatch_w = gfx_settings_swatch_width();
     u32 swatch_h = gfx_settings_swatch_height();
+    u32 title_h = gfx_window_title_height();
 
-    gfx_render_label((u32)(window->x + (s32)(10u * scale)), (u32)(window->y + (s32)(15u * scale)), "THEME", 0u);
+    gfx_render_label((u32)(window->x + (s32)(10u * scale)), (u32)(window->y + (s32)title_h + (s32)(4u * scale)), "THEME", 0u);
 
     for (i = 0; i < (s32)THEME_COUNT; i++) {
         const ui_theme* t = &g_themes[i];
@@ -903,7 +912,7 @@ static void gfx_render_settings_content(gfx_window* window) {
         framebuffer_fill_rect((u32)(sx + (s32)swatch_w - 1), (u32)sy, 1u, swatch_h, 0u);
     }
 
-    gfx_render_label((u32)(window->x + (s32)(10u * scale)), (u32)(window->y + (s32)(52u * scale)), "CLICK SWATCH", 0u);
+    gfx_render_label((u32)(window->x + (s32)(10u * scale)), (u32)(window->y + (s32)title_h + (s32)(36u * scale)), "CLICK SWATCH", 0u);
 }
 
 static void gfx_render_process_manager_content(gfx_window* window) {
@@ -913,12 +922,13 @@ static void gfx_render_process_manager_content(gfx_window* window) {
     u32 scale = gfx_ui_scale();
     char line[56];
     char num_buf[16];
-    u32 y = (u32)(window->y + (s32)(14u * scale));
+    u32 y = (u32)(window->y + (s32)gfx_window_title_height() + (s32)(2u * scale));
     u32 total_ticks = 0u;
     u32 btn_w = 46u * scale;
-    u32 btn_h = 12u * scale;
+    u32 btn_h = gfx_cell_height();
     u32 btn_x = (u32)(window->x + (s32)(10u * scale));
     u32 btn_y = (u32)(window->y + (s32)window->h - (s32)btn_h - (s32)(8u * scale));
+    u32 line_h = gfx_cell_height();
 
     count = build_running_process_list(indices, WIN_COUNT);
     for (i = 0u; i < count; i++) {
@@ -939,7 +949,7 @@ static void gfx_render_process_manager_content(gfx_window* window) {
     }
 
     gfx_render_label((u32)(window->x + (s32)(10u * scale)), y, "PROCESS MANAGER", 0u);
-    y += 12u * scale;
+    y += line_h;
 
     u32_to_dec_string(count, num_buf, sizeof(num_buf));
     line[0] = '\0';
@@ -959,15 +969,15 @@ static void gfx_render_process_manager_content(gfx_window* window) {
         line[p] = '\0';
     }
     gfx_render_label((u32)(window->x + (s32)(10u * scale)), y, line, 0u);
-    y += 12u * scale;
+    y += line_h;
 
     gfx_render_label((u32)(window->x + (s32)(10u * scale)), y, "NAME        CPU%", 0u);
-    y += 10u * scale;
+    y += line_h;
 
     for (i = 0u; i < count; i++) {
         s32 idx = indices[i];
         u32 usage = 0u;
-        u32 row_h = 10u * scale;
+        u32 row_h = line_h;
         u32 row_x = (u32)(window->x + (s32)(8u * scale));
         u32 row_w = window->w > (16u * scale) ? (window->w - (16u * scale)) : window->w;
 
@@ -1001,8 +1011,8 @@ static void gfx_render_process_manager_content(gfx_window* window) {
             line[p] = '\0';
         }
         gfx_render_label((u32)(window->x + (s32)(10u * scale)), y, line, 0u);
-        y += 10u * scale;
-        if (y + 12u * scale >= btn_y) {
+        y += line_h;
+        if (y + line_h >= btn_y) {
             break;
         }
     }
@@ -1012,7 +1022,7 @@ static void gfx_render_process_manager_content(gfx_window* window) {
     framebuffer_fill_rect(btn_x, btn_y, 1u, btn_h, 15u);
     framebuffer_fill_rect(btn_x, btn_y + btn_h - 1u, btn_w, 1u, 0u);
     framebuffer_fill_rect(btn_x + btn_w - 1u, btn_y, 1u, btn_h, 0u);
-    gfx_render_label(btn_x + (4u * scale), btn_y + (2u * scale), "KILL", 0u);
+    gfx_render_label(btn_x + (4u * scale), btn_y + gfx_text_vertical_pad(btn_h), "KILL", 0u);
 }
 
 static void gfx_render_terminal_content(gfx_window* window) {
@@ -1031,7 +1041,7 @@ static void gfx_render_terminal_content(gfx_window* window) {
 
     for (row = 0; row < rows; row++) {
         for (col = 0; col < cols; col++) {
-            const u8* glyph = glyph_for(text_cells[row * VGA_WIDTH + col]);
+            const u8* glyph = font_glyph_at((u8)text_cells[row * VGA_WIDTH + col]);
             u32 px = ox + col * cell_w;
             u32 py = oy + row * cell_h;
 
@@ -1060,7 +1070,7 @@ static void gfx_render_terminal_cell(gfx_window* window, u32 row, u32 col) {
 
     px = (u32)(window->x + (s32)border) + col * cell_w;
     py = (u32)(window->y + (s32)title_h) + row * cell_h;
-    glyph = glyph_for(text_cells[row * VGA_WIDTH + col]);
+    glyph = font_glyph_at((u8)text_cells[row * VGA_WIDTH + col]);
 
     framebuffer_fill_rect(px, py, cell_w, cell_h, g_gfx_bg);
     gfx_draw_scaled_glyph(px + glyph_pad, py + glyph_pad, glyph, g_gfx_fg);
@@ -1233,6 +1243,8 @@ void display_init(void) {
     serial_write(video_get_mode() == VIDEO_MODE_GRAPHICS ? "graphics" : "text");
     serial_write_char('\n');
     framebuffer_init();
+    font_load_from_memory(_binary_assets_fonts_terminus_psf_start,
+                          _binary_assets_fonts_terminus_psf_end);
 
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
         u8 overlay_enabled = 0u;
