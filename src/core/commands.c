@@ -60,6 +60,7 @@ static void cmd_ifconfig(const char* args);
 static void cmd_dhcp(const char* args);
 static void cmd_ping(const char* args);
 static void cmd_dns(const char* args);
+static void cmd_http(const char* args);
 
 static u8 strings_equal(const char* a, const char* b) {
     while (*a && *b) {
@@ -967,6 +968,87 @@ static void cmd_dns(const char* args) {
     display_put_char('\n');
 }
 
+static const char* http_result_text(net_http_result r) {
+    if (r == NET_HTTP_OK) return "ok";
+    if (r == NET_HTTP_ERR_INVALID_ARG) return "invalid arguments";
+    if (r == NET_HTTP_ERR_BAD_URL) return "bad url (expected http://host[:port]/path or host[:port]/path)";
+    if (r == NET_HTTP_ERR_UNSUPPORTED_SCHEME) return "unsupported scheme (use http://, https deferred)";
+    if (r == NET_HTTP_ERR_LINK_DOWN) return "network link is down";
+    if (r == NET_HTTP_ERR_NO_IP) return "no IPv4 address configured";
+    if (r == NET_HTTP_ERR_DNS_FAILED) return "dns resolve failed";
+    if (r == NET_HTTP_ERR_TCP_UNAVAILABLE) return "tcp client path not implemented yet";
+    if (r == NET_HTTP_ERR_TIMEOUT) return "timeout";
+    if (r == NET_HTTP_ERR_PROTOCOL) return "protocol error";
+    return "unknown error";
+}
+
+static void cmd_http(const char* args) {
+    char method[8];
+    char url[192];
+    char timeout_text[16];
+    char ip_text[16];
+    char body_buf[256];
+    u32 timeout_ms = 3000u;
+    net_http_response resp;
+    net_http_result r;
+
+    if (!read_arg(&args, method, sizeof(method)) || !method[0] ||
+        !read_arg(&args, url, sizeof(url)) || !url[0]) {
+        display_print("Usage: http get <url> [timeout_ms]\n");
+        return;
+    }
+
+    if (!strings_equal(method, "get")) {
+        display_print("http: only 'get' is supported right now\n");
+        return;
+    }
+
+    if (read_arg(&args, timeout_text, sizeof(timeout_text)) && timeout_text[0]) {
+        if (!parse_u32_arg(timeout_text, &timeout_ms) || timeout_ms == 0u) {
+            display_print("http: invalid timeout\n");
+            return;
+        }
+    }
+
+    display_print("http: requesting ");
+    display_print(url);
+    display_put_char('\n');
+
+    r = net_http_get(url, timeout_ms, body_buf, sizeof(body_buf), &resp);
+    if (r != NET_HTTP_OK) {
+        display_print("http: ");
+        display_print(http_result_text(r));
+        display_put_char('\n');
+        if (resp.resolved_ip != 0u) {
+            net_format_ipv4(resp.resolved_ip, ip_text, sizeof(ip_text));
+            display_print("http: target ");
+            display_print(ip_text);
+            display_print(":");
+            display_print_num(resp.port, 10);
+            display_put_char('\n');
+        }
+        return;
+    }
+
+    net_format_ipv4(resp.resolved_ip, ip_text, sizeof(ip_text));
+    display_print("http: target ");
+    display_print(ip_text);
+    display_print(":");
+    display_print_num(resp.port, 10);
+    display_put_char('\n');
+
+    display_print("http: status ");
+    display_print_num(resp.status_code, 10);
+    display_put_char('\n');
+    if (resp.body_len > 0u) {
+        display_print(body_buf);
+        display_put_char('\n');
+    }
+    if (resp.body_truncated) {
+        display_print("http: body truncated\n");
+    }
+}
+
 void commands_init(void) {
     command_register_full("help", "help [command]", "Show command list or command help", cmd_help);
     command_register_full("clear", "clear", "Clear the screen", cmd_clear);
@@ -999,4 +1081,5 @@ void commands_init(void) {
     command_register_full("dhcp", "dhcp", "Request an IPv4 lease using DHCP", cmd_dhcp);
     command_register_full("ping", "ping <ipv4> [timeout_ms]", "Send one ICMP echo request", cmd_ping);
     command_register_full("dns", "dns <hostname|ipv4> [timeout_ms]", "Resolve hostname to IPv4 (A record)", cmd_dns);
+    command_register_full("http", "http get <url> [timeout_ms]", "HTTP GET request (Phase 1 bootstrap)", cmd_http);
 }

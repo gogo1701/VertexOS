@@ -30,6 +30,7 @@ u8 display_get_graphics_test_overlay(void);
 void display_set_button_pressed(u8 pressed);
 void display_handle_mouse_event(s32 x, s32 y, u8 buttons);
 void display_set_gfx_colors(u8 fg, u8 bg, u8 suppress_test_overlay);
+void display_set_panic_mode(u8 enabled);
 
 /*
  * Display a single character, handling special characters
@@ -58,10 +59,13 @@ void display_set_cursor(u32 row, u32 col);
 
 /*
  * Get current cursor position
- * 
+ *  
  * @row: Output parameter for row position
  * @col: Output parameter for column position
  */
 void display_get_cursor(u32* row, u32* col);
+
+/* Get currently visible text viewport size in rows and columns. */
+void display_get_viewport(u32* rows, u32* cols);
 
 #endif /* DISPLAY_H */

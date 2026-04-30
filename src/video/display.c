@@ -64,6 +64,7 @@ static u8 g_graphics_test_overlay = 0;
 static u8 g_gfx_fg = GFX_FG;
 static u8 g_gfx_bg = GFX_BG;
 static u8 g_gfx_disable_overlay = 0;
+static u8 g_panic_mode = 0;
 static u8 g_button_pressed = 0;
 static gfx_window g_windows[WIN_COUNT];
 static u8 g_prev_cursor_valid = 0u;
@@ -388,6 +389,14 @@ static const u8 GLYPH_Z[7] = {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F};
 
 static u32 visible_cols(void) {
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+        if (g_panic_mode) {
+            u32 cols = framebuffer_width() / gfx_cell_width();
+            if (cols == 0u) {
+                cols = 1u;
+            }
+            return cols > GFX_MAX_COLS ? GFX_MAX_COLS : cols;
+        }
+
         gfx_window* tw = terminal_window();
         u32 inner_w = 0u;
         u32 cols;
@@ -408,6 +417,14 @@ static u32 visible_cols(void) {
 
 static u32 visible_rows(void) {
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+        if (g_panic_mode) {
+            u32 rows = framebuffer_height() / gfx_cell_height();
+            if (rows == 0u) {
+                rows = 1u;
+            }
+            return rows > GFX_MAX_ROWS ? GFX_MAX_ROWS : rows;
+        }
+
         gfx_window* tw = terminal_window();
         u32 inner_h = 0u;
         u32 rows;
@@ -539,6 +556,7 @@ static void gfx_render_label(u32 x_start, u32 y_start, const char* text, u8 colo
 static void gfx_render_taskbar(void);
 static void gfx_render_window(gfx_window* window);
 static void gfx_render_terminal_content(gfx_window* window);
+static void gfx_render_panic_full(void);
 static void gfx_render_settings_content(gfx_window* window);
 static void gfx_render_process_manager_content(gfx_window* window);
 static void gfx_render_start_menu(void);
@@ -1041,6 +1059,31 @@ static void gfx_render_terminal_content(gfx_window* window) {
     }
 }
 
+static void gfx_render_panic_full(void) {
+    u32 row;
+    u32 col;
+    u32 cols = visible_cols();
+    u32 rows = visible_rows();
+    u32 scale = gfx_ui_scale();
+    u32 cell_w = gfx_cell_width();
+    u32 cell_h = gfx_cell_height();
+    u32 glyph_pad = scale > 1u ? 1u : 0u;
+
+    framebuffer_clear(g_gfx_bg);
+
+    for (row = 0; row < rows; row++) {
+        for (col = 0; col < cols; col++) {
+            u32 px = col * cell_w;
+            u32 py = row * cell_h;
+            const u8* glyph = glyph_for(text_cells[row * VGA_WIDTH + col]);
+
+            framebuffer_fill_rect(px, py, cell_w, cell_h, g_gfx_bg);
+            gfx_draw_scaled_glyph(px + glyph_pad, py + glyph_pad, glyph, g_gfx_fg);
+            text_cells_dirty[row * VGA_WIDTH + col] = 0u;
+        }
+    }
+}
+
 static void gfx_render_terminal_cell(gfx_window* window, u32 row, u32 col) {
     u32 cols = visible_cols();
     u32 rows = visible_rows();
@@ -1329,6 +1372,15 @@ void display_refresh(void) {
     }
 
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+        if (g_panic_mode) {
+            gfx_render_panic_full();
+            framebuffer_flush();
+            clear_visible_text_dirty();
+            terminal_force_full_redraw = 0u;
+            g_prev_cursor_valid = 0u;
+            return;
+        }
+
         update_process_usage_sample();
         if (visible_terminal_count() > 1u) {
             terminal_force_full_redraw = 1u;
@@ -1491,6 +1543,15 @@ void display_get_cursor(u32* row, u32* col) {
     }
     if (col) {
         *col = cursor_col;
+    }
+}
+
+void display_get_viewport(u32* rows, u32* cols) {
+    if (rows) {
+        *rows = visible_rows();
+    }
+    if (cols) {
+        *cols = visible_cols();
     }
 }
 
@@ -1732,6 +1793,18 @@ void display_set_gfx_colors(u8 fg, u8 bg, u8 suppress_test_overlay) {
     g_gfx_fg = fg;
     g_gfx_bg = bg;
     g_gfx_disable_overlay = suppress_test_overlay ? 1u : 0u;
+    terminal_force_full_redraw = 1u;
+}
+
+void display_set_panic_mode(u8 enabled) {
+    g_panic_mode = enabled ? 1u : 0u;
+    if (g_panic_mode) {
+        g_start_menu_open = 0u;
+        g_drag_window = -1;
+        g_resize_window = -1;
+        g_gfx_disable_overlay = 1u;
+        g_prev_cursor_valid = 0u;
+    }
     terminal_force_full_redraw = 1u;
 }
 
