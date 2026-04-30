@@ -13,6 +13,7 @@ static volatile s32 kb_buffer[KB_BUFFER_SIZE];
 static volatile u32 kb_head = 0;
 static volatile u32 kb_tail = 0;
 static volatile u8 kb_extended = 0;
+static volatile u8 kb_shift_down = 0;
 
 static u8 kb_buffer_is_empty(void) {
     return kb_head == kb_tail;
@@ -40,8 +41,8 @@ static s32 kb_buffer_pop(void) {
 /*
  * Convert PS/2 keyboard scancode to ASCII character
  */
-static char scancode_to_ascii(u8 scancode) {
-    /* US QWERTY keyboard scancode to ASCII mapping table */
+static char scancode_to_ascii(u8 scancode, u8 shift_down) {
+    /* US QWERTY keyboard scancode to ASCII mapping tables. */
     static const char map[128] = {
         0,      /* 0x00: Invalid */
         27,     /* 0x01: ESC */
@@ -60,9 +61,27 @@ static char scancode_to_ascii(u8 scancode) {
         ' '     /* 0x39: Spacebar */
     };
 
+    static const char shift_map[128] = {
+        0,      /* 0x00: Invalid */
+        27,     /* 0x01: ESC */
+        '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+',
+        '\b',   /* 0x0E: Backspace */
+        '\t',   /* 0x0F: Tab */
+        'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}',
+        '\n',   /* 0x1C: Enter */
+        0,      /* 0x1D: Left Ctrl */
+        'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~',
+        0,      /* 0x2A: Left Shift */
+        '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?',
+        0,      /* 0x36: Right Shift */
+        '*',    /* 0x37: Keypad Multiply */
+        0,      /* 0x38: Left Alt */
+        ' '     /* 0x39: Spacebar */
+    };
+
     /* Look up scancode in the mapping table */
     if (scancode < 128) {
-        return map[scancode];
+        return shift_down ? shift_map[scancode] : map[scancode];
     }
     return 0;  /* Invalid or key-release scancode */
 }
@@ -71,6 +90,7 @@ void keyboard_init(void) {
     kb_head = 0;
     kb_tail = 0;
     kb_extended = 0;
+    kb_shift_down = 0;
 }
 
 void keyboard_irq_handler(void) {
@@ -107,8 +127,16 @@ void keyboard_irq_handler(void) {
         return;
     }
 
-    /* Ignore key-release events. */
     if (scancode & 0x80) {
+        u8 released = (u8)(scancode & 0x7Fu);
+        if (released == 0x2Au || released == 0x36u) {
+            kb_shift_down = 0u;
+        }
+        return;
+    }
+
+    if (scancode == 0x2Au || scancode == 0x36u) {
+        kb_shift_down = 1u;
         return;
     }
 
@@ -122,7 +150,7 @@ void keyboard_irq_handler(void) {
         return;
     }
 
-    key = (s32)scancode_to_ascii(scancode);
+    key = (s32)scancode_to_ascii(scancode, kb_shift_down);
     if (key) {
         kb_buffer_push(key);
     }
