@@ -32,7 +32,7 @@ CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra
 CFLAGS_USER=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2
 LDFLAGS=-m elf_i386 -nostdlib -T boot/kernel.ld
 LDFLAGS_USER=-m elf_i386 -nostdlib -T user/user.ld
-MAX_KERNEL_BYTES=102400
+MAX_KERNEL_BYTES=106496
 DISK_IMAGE_BYTES=33554432
 ELTORITO_FLOPPY_BYTES=1474560
 

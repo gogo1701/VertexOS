@@ -27,7 +27,7 @@
 #define GFX_BUTTON_W 80u
 #define GFX_BUTTON_H 16u
 #define GFX_TASKBAR_HEIGHT 18u
-#define GFX_WINDOW_TITLE_H 16u
+#define GFX_WINDOW_TITLE_H 14u
 #define GFX_WINDOW_BORDER 1u
 #define GFX_WINDOW_MIN_W 72u
 #define GFX_WINDOW_MIN_H 48u
@@ -51,6 +51,8 @@
 #define THEME_COUNT 3u
 #define SETTINGS_SWATCH_W 18u
 #define SETTINGS_SWATCH_H 12u
+#define UI_SCALE_MIN 1u
+#define UI_SCALE_MAX 4u
 
 typedef gui_window gfx_window;
 
@@ -112,6 +114,7 @@ static u8 g_start_menu_open = 0;
 static u8 g_active_theme = 0;
 static u8 g_taskbar_bg = 8u;
 static u8 g_taskbar_text = 0u;
+static u8 g_ui_scale_level = 0u; /* 0: auto, 1..4: manual */
 static u32 g_process_cpu_ticks[WIN_COUNT];
 static s32 g_pm_selected_index = -1;
 
@@ -170,14 +173,14 @@ static void apply_theme(u8 theme_id) {
         }
     }
     if (sw) {
-        sw->title_bg = t->settings_title;
+        sw->title_bg = t->term_title;
         sw->body_bg = t->settings_body;
     }
 
     {
         gfx_window* pw = process_manager_window();
         if (pw) {
-            pw->title_bg = t->settings_title;
+            pw->title_bg = t->term_title;
             pw->body_bg = t->settings_body;
         }
     }
@@ -212,6 +215,11 @@ static u32 gfx_start_menu_item_height(void);
 static u32 gfx_settings_swatch_width(void);
 static u32 gfx_settings_swatch_height(void);
 static void gfx_draw_scaled_glyph(u32 x_start, u32 y_start, const u8* glyph, u8 color);
+static void settings_scale_slider_rect(const gfx_window* window,
+                                       s32* out_x,
+                                       s32* out_y,
+                                       u32* out_w,
+                                       u32* out_h);
 
 static s32 start_menu_y(void) {
     return (s32)framebuffer_height() - (s32)gfx_taskbar_height()
@@ -277,10 +285,50 @@ static u32 gfx_settings_swatch_height(void);
 static void gfx_draw_scaled_glyph(u32 x_start, u32 y_start, const u8* glyph, u8 color);
 
 static u32 gfx_ui_scale(void) {
-    if (framebuffer_width() >= 1024u && framebuffer_height() >= 768u) {
+    if (g_ui_scale_level >= UI_SCALE_MIN && g_ui_scale_level <= UI_SCALE_MAX) {
+        return (u32)g_ui_scale_level;
+    }
+    if (framebuffer_width() >= 1152u && framebuffer_height() >= 864u) {
         return 2u;
     }
     return 1u;
+}
+
+static void settings_scale_slider_rect(const gfx_window* window,
+                                       s32* out_x,
+                                       s32* out_y,
+                                       u32* out_w,
+                                       u32* out_h) {
+    u32 scale;
+    u32 title_h;
+    s32 x;
+    s32 y;
+    u32 w;
+    u32 h;
+
+    if (!window) {
+        return;
+    }
+
+    scale = gfx_ui_scale();
+    title_h = gfx_window_title_height();
+    x = window->x + (s32)(10u * scale);
+    y = window->y + (s32)title_h + (s32)(56u * scale);
+    w = 84u * scale;
+    h = 8u * scale;
+
+    if (out_x) {
+        *out_x = x;
+    }
+    if (out_y) {
+        *out_y = y;
+    }
+    if (out_w) {
+        *out_w = w;
+    }
+    if (out_h) {
+        *out_h = h;
+    }
 }
 
 static u32 gfx_cell_width(void) {
@@ -895,6 +943,15 @@ static void gfx_render_window(gfx_window* window) {
 static void gfx_render_settings_content(gfx_window* window) {
     s32 i;
     s32 sy = settings_swatch_y();
+    s32 slider_x;
+    s32 slider_y;
+    u32 slider_w;
+    u32 slider_h;
+    u32 knob_size;
+    u32 knob_x;
+    u32 knob_y;
+    u32 scale_value;
+    const char* scale_text;
     u32 scale = gfx_ui_scale();
     u32 swatch_w = gfx_settings_swatch_width();
     u32 swatch_h = gfx_settings_swatch_height();
@@ -913,6 +970,49 @@ static void gfx_render_settings_content(gfx_window* window) {
     }
 
     gfx_render_label((u32)(window->x + (s32)(10u * scale)), (u32)(window->y + (s32)title_h + (s32)(36u * scale)), "CLICK SWATCH", 0u);
+
+    settings_scale_slider_rect(window, &slider_x, &slider_y, &slider_w, &slider_h);
+    framebuffer_fill_rect((u32)slider_x, (u32)slider_y, slider_w, slider_h, 8u);
+    framebuffer_fill_rect((u32)slider_x, (u32)slider_y, slider_w, 1u, 15u);
+    framebuffer_fill_rect((u32)slider_x, (u32)slider_y, 1u, slider_h, 15u);
+    framebuffer_fill_rect((u32)slider_x, (u32)(slider_y + (s32)slider_h - 1), slider_w, 1u, 0u);
+    framebuffer_fill_rect((u32)(slider_x + (s32)slider_w - 1), (u32)slider_y, 1u, slider_h, 0u);
+
+    scale_value = gfx_ui_scale();
+    if (scale_value < UI_SCALE_MIN) {
+        scale_value = UI_SCALE_MIN;
+    }
+    if (scale_value > UI_SCALE_MAX) {
+        scale_value = UI_SCALE_MAX;
+    }
+
+    knob_size = slider_h + (2u * scale);
+    if (UI_SCALE_MAX > UI_SCALE_MIN) {
+        knob_x = (u32)slider_x
+                 + (((scale_value - UI_SCALE_MIN)
+                     * (slider_w - knob_size))
+                    / (UI_SCALE_MAX - UI_SCALE_MIN));
+    } else {
+        knob_x = (u32)slider_x;
+    }
+    knob_y = (u32)slider_y - scale;
+    framebuffer_fill_rect(knob_x, knob_y, knob_size, knob_size, 7u);
+    framebuffer_fill_rect(knob_x, knob_y, knob_size, 1u, 15u);
+    framebuffer_fill_rect(knob_x, knob_y, 1u, knob_size, 15u);
+    framebuffer_fill_rect(knob_x, knob_y + knob_size - 1u, knob_size, 1u, 8u);
+    framebuffer_fill_rect(knob_x + knob_size - 1u, knob_y, 1u, knob_size, 8u);
+
+    if (scale_value <= 1u) {
+        scale_text = "SCALE: 1X";
+    } else if (scale_value == 2u) {
+        scale_text = "SCALE: 2X";
+    } else if (scale_value == 3u) {
+        scale_text = "SCALE: 3X";
+    } else {
+        scale_text = "SCALE: 4X";
+    }
+
+    gfx_render_label((u32)(window->x + (s32)(10u * scale)), (u32)(slider_y + (s32)slider_h + (s32)(6u * scale)), scale_text, 0u);
 }
 
 static void gfx_render_process_manager_content(gfx_window* window) {
@@ -1637,6 +1737,10 @@ void display_handle_mouse_event(s32 x, s32 y, u8 buttons) {
                 if (window->role == GUI_WINDOW_ROLE_SETTINGS) {
                     s32 si;
                     s32 sy = settings_swatch_y();
+                    s32 slider_x;
+                    s32 slider_y;
+                    u32 slider_w;
+                    u32 slider_h;
                     for (si = 0; si < (s32)THEME_COUNT; si++) {
                         s32 sx = settings_swatch_x(si);
                         if (x >= sx && x < sx + (s32)swatch_w &&
@@ -1648,6 +1752,42 @@ void display_handle_mouse_event(s32 x, s32 y, u8 buttons) {
                             prev_buttons = buttons;
                             return;
                         }
+                    }
+
+                    settings_scale_slider_rect(window, &slider_x, &slider_y, &slider_w, &slider_h);
+                    if (x >= slider_x && x < slider_x + (s32)slider_w &&
+                        y >= slider_y - (s32)scale && y < slider_y + (s32)slider_h + (s32)scale) {
+                        u32 scale_level;
+                        s32 rel_x = x - slider_x;
+                        if (slider_w <= 1u || UI_SCALE_MAX == UI_SCALE_MIN) {
+                            scale_level = UI_SCALE_MIN;
+                        } else {
+                            scale_level = UI_SCALE_MIN
+                                          + (u32)((rel_x * (s32)(UI_SCALE_MAX - UI_SCALE_MIN)
+                                                   + (s32)(slider_w / 2u))
+                                                  / (s32)(slider_w - 1u));
+                        }
+                        u8 new_level = (u8)scale_level;
+                        if (new_level < UI_SCALE_MIN) {
+                            new_level = UI_SCALE_MIN;
+                        }
+                        if (new_level > UI_SCALE_MAX) {
+                            new_level = UI_SCALE_MAX;
+                        }
+                        if (g_ui_scale_level != new_level) {
+                            g_ui_scale_level = new_level;
+                            g_windows[WIN_DESKTOP].x = 0;
+                            g_windows[WIN_DESKTOP].y = 0;
+                            g_windows[WIN_DESKTOP].w = framebuffer_width();
+                            g_windows[WIN_DESKTOP].h = framebuffer_height() - gfx_taskbar_height();
+                            terminal_force_full_redraw = 1u;
+                            g_prev_cursor_valid = 0u;
+                        }
+                        mouse_hide_cursor();
+                        gfx_render_scene_no_cursor();
+                        mouse_refresh_cursor();
+                        prev_buttons = buttons;
+                        return;
                     }
                 }
 
