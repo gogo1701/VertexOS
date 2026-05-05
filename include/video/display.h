@@ -30,6 +30,8 @@ u8 display_get_graphics_test_overlay(void);
 void display_set_button_pressed(u8 pressed);
 void display_handle_mouse_event(s32 x, s32 y, u8 buttons);
 void display_set_gfx_colors(u8 fg, u8 bg, u8 suppress_test_overlay);
+void display_begin_update(void);
+void display_end_update(void);
 
 /*
  * Display a single character, handling special characters

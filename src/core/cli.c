@@ -62,6 +62,7 @@ static void redraw_input_line(
 ) {
     u32 i;
 
+    display_begin_update();
     display_set_cursor(prompt_row, prompt_col);
 
     for (i = 0; i < len; i++) {
@@ -73,6 +74,7 @@ static void redraw_input_line(
     }
 
     display_set_cursor(prompt_row, prompt_col + cursor);
+    display_end_update();
     *prev_len = len;
 }
 

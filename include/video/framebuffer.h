@@ -56,6 +56,7 @@ void framebuffer_flush(void);
  * updates that won't cause visible tearing or flickering.
  */
 void framebuffer_wait_vsync(void);
+void framebuffer_set_vsync_enabled(u8 enabled);
 
 /*
  * framebuffer_put_pixel - Set a single pixel.

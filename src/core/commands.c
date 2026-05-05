@@ -993,8 +993,8 @@ void commands_init(void) {
     command_register_full("pwd", "pwd", "Print current directory", cmd_pwd);
     command_register_full("exec", "exec <elf-path>", "Load and run 32-bit ELF from disk", cmd_exec);
     command_register_full("edit", "edit <path> (WIP)", "Open console code editor (work in progress)", cmd_edit);
-    command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
-    command_register_full("resolution", "resolution [status|320x200|640x480|800x600|1024x768]", "Set next-boot graphics resolution", cmd_resolution);
+    //command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
+    //command_register_full("resolution", "resolution [status|320x200|640x480|800x600|1024x768]", "Set next-boot graphics resolution", cmd_resolution);
     command_register_full("ifconfig", "ifconfig", "Show network interface and IP configuration", cmd_ifconfig);
     command_register_full("dhcp", "dhcp", "Request an IPv4 lease using DHCP", cmd_dhcp);
     command_register_full("ping", "ping <ipv4> [timeout_ms]", "Send one ICMP echo request", cmd_ping);
