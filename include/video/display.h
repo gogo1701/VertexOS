@@ -12,6 +12,7 @@
 /* VGA Display Constants */
 #define VGA_WIDTH 80           /* Characters per row */
 #define VGA_HEIGHT 25          /* Total rows of text */
+#define DISPLAY_MAX_TERMINALS 16
 
 /*
  * Initialize the display
@@ -32,6 +33,10 @@ void display_handle_mouse_event(s32 x, s32 y, u8 buttons);
 void display_set_gfx_colors(u8 fg, u8 bg, u8 suppress_test_overlay);
 void display_begin_update(void);
 void display_end_update(void);
+void display_bind_terminal_task(u32 terminal_session, u32 task_id);
+s32 display_terminal_session_for_task(u32 task_id);
+s32 display_get_focused_terminal_session(void);
+u32 display_create_terminal_session(u8 make_visible);
 
 /*
  * Display a single character, handling special characters
@@ -65,5 +70,4 @@ void display_set_cursor(u32 row, u32 col);
  * @col: Output parameter for column position
  */
 void display_get_cursor(u32* row, u32* col);
-
 #endif /* DISPLAY_H */
