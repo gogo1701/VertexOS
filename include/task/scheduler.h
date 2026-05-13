@@ -21,7 +21,7 @@
 
 #include "types.h"
 
-#define MAX_TASKS       8       /* Maximum concurrently live tasks            */
+#define MAX_TASKS       64      /* Maximum concurrently live tasks            */
 #define TASK_STACK_SIZE 4096u   /* Stack size in bytes for each task          */
 
 /*

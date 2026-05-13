@@ -1,6 +1,7 @@
 #include "cli.h"
 #include "commands.h"
 #include "display.h"
+#include "interrupts.h"
 #include "keyboard.h"
 #include "scheduler.h"
 #include "vfs.h"
@@ -62,6 +63,7 @@ static void redraw_input_line(
 ) {
     u32 i;
 
+    display_begin_update();
     display_set_cursor(prompt_row, prompt_col);
 
     for (i = 0; i < len; i++) {
@@ -73,10 +75,11 @@ static void redraw_input_line(
     }
 
     display_set_cursor(prompt_row, prompt_col + cursor);
+    display_end_update();
     *prev_len = len;
 }
 
-void cli_run(void) {
+void cli_run(u32 terminal_session) {
     char input[INPUT_MAX];
     char history[HISTORY_MAX][INPUT_MAX];
     u32 len = 0;
@@ -97,7 +100,7 @@ void cli_run(void) {
     display_get_cursor(&prompt_row, &prompt_col);
 
     for (;;) {
-        s32 key = keyboard_read_key();
+        s32 key = keyboard_read_key_for_terminal(terminal_session);
 
         if (key == KEY_LEFT) {
             if (cursor > 0) {
@@ -287,4 +290,8 @@ void cli_run(void) {
 
         scheduler_maybe_preempt();
     }
+}
+
+void cli_task_entry(void* arg) {
+    cli_run((u32)arg);
 }

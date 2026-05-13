@@ -9,12 +9,15 @@
 #ifndef CLI_H
 #define CLI_H
 
+#include "types.h"
+
 /*
  * cli_run - Start the interactive shell loop.
  *
  * Blocks forever, reading user input and executing commands.  Should be
  * run inside a dedicated kernel task.  Never returns.
  */
-void cli_run(void);
+void cli_run(u32 terminal_session);
+void cli_task_entry(void* arg);
 
 #endif /* CLI_H */

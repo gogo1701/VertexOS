@@ -14,6 +14,7 @@ static u32 g_dirty_min_x = 0u;
 static u32 g_dirty_min_y = 0u;
 static u32 g_dirty_max_x = 0u;
 static u32 g_dirty_max_y = 0u;
+static u8 g_vsync_enabled = 1u;
 
 static void framebuffer_expand_dirty_rect(u32 x1, u32 y1, u32 x2, u32 y2) {
     if (x1 >= x2 || y1 >= y2) {
@@ -188,7 +189,9 @@ void framebuffer_flush(void) {
     if (!g_dirty_valid) {
         return;
     }
-    framebuffer_wait_vsync();
+    if (g_vsync_enabled) {
+        framebuffer_wait_vsync();
+    }
     {
         u32 y;
         u32 copy_w = g_dirty_max_x - g_dirty_min_x;
@@ -204,6 +207,10 @@ void framebuffer_flush(void) {
         }
     }
     g_dirty_valid = 0u;
+}
+
+void framebuffer_set_vsync_enabled(u8 enabled) {
+    g_vsync_enabled = enabled ? 1u : 0u;
 }
 
 void framebuffer_wait_vsync(void) {

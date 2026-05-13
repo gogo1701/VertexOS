@@ -29,6 +29,7 @@ typedef struct {
     const char* title;
     u8 visible;
     gui_window_role role;
+    u8 slot_id; /* for terminal windows: index into per-terminal buffer array */
 } gui_window;
 
 s32 gui_window_index_from_ptr(gui_window* windows, s32 count, gui_window* target);

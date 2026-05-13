@@ -32,7 +32,7 @@ CFLAGS=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra
 CFLAGS_USER=-m32 -ffreestanding -fno-stack-protector -fno-pie -nostdlib -Wall -Wextra -O2
 LDFLAGS=-m elf_i386 -nostdlib -T boot/kernel.ld
 LDFLAGS_USER=-m elf_i386 -nostdlib -T user/user.ld
-MAX_KERNEL_BYTES=98304
+MAX_KERNEL_BYTES=106496
 DISK_IMAGE_BYTES=33554432
 ELTORITO_FLOPPY_BYTES=1474560
 
@@ -40,6 +40,7 @@ BUILD=build
 SRC_DIR=src
 BOOT_DIR=boot
 USER_DIR=user
+FONT_SRC=assets/fonts/terminus.psf
 
 # Source files grouped by subsystem
 CORE_SRCS  = $(addprefix $(SRC_DIR)/core/,    kernel.c cli.c commands.c editor.c panic.c)
@@ -78,6 +79,9 @@ $(BUILD)/user/hello.elf: $(BUILD)/user/hello.o $(USER_DIR)/user.ld | $(BUILD)
 $(BUILD)/user_hello_elf.o: $(BUILD)/user/hello.elf | $(BUILD)
 	$(OBJCOPY) -I binary -O elf32-i386 -B i386 $(BUILD)/user/hello.elf $(BUILD)/user_hello_elf.o
 
+$(BUILD)/terminus_font.o: $(FONT_SRC) | $(BUILD)
+	$(OBJCOPY) -I binary -O elf32-i386 -B i386 $(FONT_SRC) $(BUILD)/terminus_font.o
+
 $(BUILD)/%.o: $(SRC_DIR)/core/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
@@ -99,8 +103,8 @@ $(BUILD)/%.o: $(SRC_DIR)/video/%.c | $(BUILD)
 $(BUILD)/%.o: $(SRC_DIR)/exec/%.c | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD)/kernel.elf: $(BUILD)/kernel_entry.o $(BUILD)/irq_stubs.o $(C_OBJECTS_BUILD) $(BUILD)/user_hello_elf.o $(BOOT_DIR)/kernel.ld
-	$(LD) $(LDFLAGS) -o $(BUILD)/kernel.elf $(BUILD)/kernel_entry.o $(BUILD)/irq_stubs.o $(C_OBJECTS_BUILD) $(BUILD)/user_hello_elf.o
+$(BUILD)/kernel.elf: $(BUILD)/kernel_entry.o $(BUILD)/irq_stubs.o $(C_OBJECTS_BUILD) $(BUILD)/user_hello_elf.o $(BUILD)/terminus_font.o $(BOOT_DIR)/kernel.ld
+	$(LD) $(LDFLAGS) -o $(BUILD)/kernel.elf $(BUILD)/kernel_entry.o $(BUILD)/irq_stubs.o $(C_OBJECTS_BUILD) $(BUILD)/user_hello_elf.o $(BUILD)/terminus_font.o
 
 $(BUILD)/kernel.bin: $(BUILD)/kernel.elf
 	$(OBJCOPY) -O binary $(BUILD)/kernel.elf $(BUILD)/kernel.bin

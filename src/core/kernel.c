@@ -68,11 +68,6 @@ static void map_graphics_framebuffer_if_needed(void) {
     serial_write("[DBG kern] fb page mapping done\n");
 }
 
-static void cli_task(void* arg) {
-    (void)arg;
-    cli_run();
-}
-
 static void idle_task(void* arg) {
     (void)arg;
     for (;;) {
@@ -122,12 +117,17 @@ void kmain(u32 boot_video_mode, const e820_entry* e820_map, u32 e820_count) {
     commands_init();
     scheduler_init();
 
-    /* Display welcome message */
-    display_print("VertexOS - Simple Console\n");
-    display_print("Type 'help' for available commands.\n\n");
-
     /* Start scheduler with CLI and idle tasks. */
-    scheduler_create_task(cli_task, 0, "cli", TASK_MODE_KERNEL);
-    scheduler_create_task(idle_task, 0, "idle", TASK_MODE_KERNEL);
+    {
+        (void)display_create_terminal_session(1u);
+        (void)display_create_terminal_session(0u);
+        (void)display_create_terminal_session(0u);
+
+        /* Display welcome message */
+        display_print("VertexOS - Simple Console\n");
+        display_print("Type 'help' for available commands.\n\n");
+
+        scheduler_create_task(idle_task, 0, "idle", TASK_MODE_KERNEL);
+    }
     scheduler_start();
 }

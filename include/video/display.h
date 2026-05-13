@@ -12,6 +12,7 @@
 /* VGA Display Constants */
 #define VGA_WIDTH 80           /* Characters per row */
 #define VGA_HEIGHT 25          /* Total rows of text */
+#define DISPLAY_MAX_TERMINALS 16
 
 /*
  * Initialize the display
@@ -30,6 +31,12 @@ u8 display_get_graphics_test_overlay(void);
 void display_set_button_pressed(u8 pressed);
 void display_handle_mouse_event(s32 x, s32 y, u8 buttons);
 void display_set_gfx_colors(u8 fg, u8 bg, u8 suppress_test_overlay);
+void display_begin_update(void);
+void display_end_update(void);
+void display_bind_terminal_task(u32 terminal_session, u32 task_id);
+s32 display_terminal_session_for_task(u32 task_id);
+s32 display_get_focused_terminal_session(void);
+u32 display_create_terminal_session(u8 make_visible);
 void display_set_panic_mode(u8 enabled);
 
 /*
@@ -59,7 +66,7 @@ void display_set_cursor(u32 row, u32 col);
 
 /*
  * Get current cursor position
- *  
+ *
  * @row: Output parameter for row position
  * @col: Output parameter for column position
  */

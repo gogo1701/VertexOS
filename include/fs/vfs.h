@@ -170,5 +170,8 @@ u8 vfs_stat_path(const char* path, sfs_node_info* out_info);
  *          the VFS; do not modify or free it.
  */
 const char* vfs_get_cwd(void);
+u8 vfs_setenv(const char* key, const char* value);
+const char* vfs_getenv(const char* key);
+u8 vfs_unsetenv(const char* key);
 
 #endif /* VFS_H */

@@ -26,6 +26,9 @@ void keyboard_irq_handler(void);
 /* Read a key event (ASCII or KEY_* constant), blocking. */
 s32 keyboard_read_key(void);
 
+/* Read a key event for a specific terminal session, blocking. */
+s32 keyboard_read_key_for_terminal(u32 terminal_session);
+
 /*
  * Read a character from the keyboard (blocking)
  * 

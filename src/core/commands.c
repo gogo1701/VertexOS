@@ -52,6 +52,9 @@ static void cmd_cp(const char* args);
 static void cmd_mv(const char* args);
 static void cmd_cd(const char* args);
 static void cmd_pwd(const char* args);
+static void cmd_setenv(const char* args);
+static void cmd_getenv(const char* args);
+static void cmd_unsetenv(const char* args);
 static void cmd_exec(const char* args);
 static void cmd_edit(const char* args);
 static void cmd_video(const char* args);
@@ -667,6 +670,53 @@ static void cmd_pwd(const char* args) {
     display_put_char('\n');
 }
 
+static void cmd_setenv(const char* args) {
+    char key[16];
+    char value[64];
+
+    if (!read_arg(&args, key, sizeof(key)) || !key[0] ||
+        !read_text_arg(&args, value, sizeof(value))) {
+        display_print("Usage: setenv <key> <value>\n");
+        return;
+    }
+
+    if (!vfs_setenv(key, value)) {
+        display_print("setenv failed\n");
+    }
+}
+
+static void cmd_getenv(const char* args) {
+    char key[16];
+    const char* value;
+
+    if (!read_arg(&args, key, sizeof(key)) || !key[0]) {
+        display_print("Usage: getenv <key>\n");
+        return;
+    }
+
+    value = vfs_getenv(key);
+    if (!value) {
+        display_print("(unset)\n");
+        return;
+    }
+
+    display_print(value);
+    display_put_char('\n');
+}
+
+static void cmd_unsetenv(const char* args) {
+    char key[16];
+
+    if (!read_arg(&args, key, sizeof(key)) || !key[0]) {
+        display_print("Usage: unsetenv <key>\n");
+        return;
+    }
+
+    if (!vfs_unsetenv(key)) {
+        display_print("unsetenv failed\n");
+    }
+}
+
 static void cmd_exec(const char* args) {
     char path[64];
 
@@ -1073,10 +1123,13 @@ void commands_init(void) {
     command_register_full("mv", "mv <src> <dst>", "Move/rename file", cmd_mv);
     command_register_full("cd", "cd [path]", "Change current directory", cmd_cd);
     command_register_full("pwd", "pwd", "Print current directory", cmd_pwd);
+    command_register_full("setenv", "setenv <key> <value>", "Set terminal-local environment variable", cmd_setenv);
+    command_register_full("getenv", "getenv <key>", "Read terminal-local environment variable", cmd_getenv);
+    command_register_full("unsetenv", "unsetenv <key>", "Remove terminal-local environment variable", cmd_unsetenv);
     command_register_full("exec", "exec <elf-path>", "Load and run 32-bit ELF from disk", cmd_exec);
     command_register_full("edit", "edit <path> (WIP)", "Open console code editor (work in progress)", cmd_edit);
-    command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
-    command_register_full("resolution", "resolution [status|320x200|640x480|800x600|1024x768]", "Set next-boot graphics resolution", cmd_resolution);
+    //command_register_full("video", "video [status|text|gfx|test [on|off|status]]", "Show mode, save next-boot mode, or toggle graphics test overlay", cmd_video);
+    //command_register_full("resolution", "resolution [status|320x200|640x480|800x600|1024x768]", "Set next-boot graphics resolution", cmd_resolution);
     command_register_full("ifconfig", "ifconfig", "Show network interface and IP configuration", cmd_ifconfig);
     command_register_full("dhcp", "dhcp", "Request an IPv4 lease using DHCP", cmd_dhcp);
     command_register_full("ping", "ping <ipv4> [timeout_ms]", "Send one ICMP echo request", cmd_ping);
