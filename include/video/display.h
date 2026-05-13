@@ -66,7 +66,7 @@ void display_set_cursor(u32 row, u32 col);
 
 /*
  * Get current cursor position
- *  
+ *
  * @row: Output parameter for row position
  * @col: Output parameter for column position
  */
