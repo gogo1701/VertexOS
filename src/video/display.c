@@ -115,6 +115,7 @@ static u8 g_graphics_test_overlay = 0;
 static u8 g_gfx_fg = GFX_FG;
 static u8 g_gfx_bg = GFX_BG;
 static u8 g_gfx_disable_overlay = 0;
+static u8 g_panic_mode = 0;
 static u8 g_button_pressed = 0;
 static gfx_window g_windows[WIN_COUNT];
 static u8 g_prev_cursor_valid = 0u;
@@ -942,11 +943,21 @@ static u32 visible_rows_for_window(const gfx_window* tw) {
 
 static u32 visible_cols(void) {
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
-        u32 tid = scheduler_current_tid();
-        s32 i;
-        for (i = 0; i < WIN_TERMINAL_SLOTS; i++) {
-            if (g_terminal_task_ids[i] == tid) {
-                return visible_cols_for_window(terminal_window_for_session((u32)i));
+        if (g_panic_mode) {
+            u32 cols = framebuffer_width() / gfx_cell_width();
+            if (cols == 0u) {
+                cols = 1u;
+            }
+            return cols > GFX_MAX_COLS ? GFX_MAX_COLS : cols;
+        }
+
+        {
+            u32 tid = scheduler_current_tid();
+            s32 i;
+            for (i = 0; i < WIN_TERMINAL_SLOTS; i++) {
+                if (g_terminal_task_ids[i] == tid) {
+                    return visible_cols_for_window(terminal_window_for_session((u32)i));
+                }
             }
         }
         return visible_cols_for_window(terminal_window());
@@ -956,11 +967,21 @@ static u32 visible_cols(void) {
 
 static u32 visible_rows(void) {
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
-        u32 tid = scheduler_current_tid();
-        s32 i;
-        for (i = 0; i < WIN_TERMINAL_SLOTS; i++) {
-            if (g_terminal_task_ids[i] == tid) {
-                return visible_rows_for_window(terminal_window_for_session((u32)i));
+        if (g_panic_mode) {
+            u32 rows = framebuffer_height() / gfx_cell_height();
+            if (rows == 0u) {
+                rows = 1u;
+            }
+            return rows > GFX_MAX_ROWS ? GFX_MAX_ROWS : rows;
+        }
+
+        {
+            u32 tid = scheduler_current_tid();
+            s32 i;
+            for (i = 0; i < WIN_TERMINAL_SLOTS; i++) {
+                if (g_terminal_task_ids[i] == tid) {
+                    return visible_rows_for_window(terminal_window_for_session((u32)i));
+                }
             }
         }
         return visible_rows_for_window(terminal_window());
@@ -1012,6 +1033,7 @@ static void gfx_render_label(u32 x_start, u32 y_start, const char* text, u8 colo
 static void gfx_render_taskbar(void);
 static void gfx_render_window(gfx_window* window);
 static void gfx_render_terminal_content(gfx_window* window);
+static void gfx_render_panic_full(void);
 static void gfx_render_settings_content(gfx_window* window);
 static void gfx_render_process_manager_content(gfx_window* window);
 static void gfx_render_start_menu(void);
@@ -1022,6 +1044,7 @@ static void gfx_refresh_terminal_incremental(void);
 static void clear_visible_text_dirty(void);
 static void u32_to_dec_string(u32 value, char* out, u32 out_size);
 static s32 find_hidden_terminal_slot(void);
+static u32 visible_terminal_count(void);
 static void update_process_usage_sample(void);
 static u8 process_manager_visible(void);
 static u32 build_running_process_list(s32* out_indices, u32 max_indices);
@@ -1192,6 +1215,17 @@ static s32 find_hidden_terminal_slot(void) {
         }
     }
     return -1;
+}
+
+static u32 visible_terminal_count(void) {
+    u32 count = 0u;
+    s32 i;
+    for (i = WIN_TERMINAL_FIRST; i <= WIN_TERMINAL_LAST; i++) {
+        if (g_windows[i].role == GUI_WINDOW_ROLE_TERMINAL && g_windows[i].visible) {
+            count++;
+        }
+    }
+    return count;
 }
 
 static void update_process_usage_sample(void) {
@@ -1717,6 +1751,32 @@ static void gfx_render_terminal_content(gfx_window* window) {
     }
 }
 
+static void gfx_render_panic_full(void) {
+    terminal_state* ts = terminal_state_for_active_ui();
+    u32 row;
+    u32 col;
+    u32 cols = visible_cols();
+    u32 rows = visible_rows();
+    u32 scale = gfx_ui_scale();
+    u32 cell_w = gfx_cell_width();
+    u32 cell_h = gfx_cell_height();
+    u32 glyph_pad = scale > 1u ? 1u : 0u;
+
+    framebuffer_clear(g_gfx_bg);
+
+    for (row = 0; row < rows; row++) {
+        for (col = 0; col < cols; col++) {
+            u32 px = col * cell_w;
+            u32 py = row * cell_h;
+            const u8* glyph = font_glyph_at((u8)ts->text_cells[row * VGA_WIDTH + col]);
+
+            framebuffer_fill_rect(px, py, cell_w, cell_h, g_gfx_bg);
+            gfx_draw_scaled_glyph(px + glyph_pad, py + glyph_pad, glyph, g_gfx_fg, g_gfx_bg);
+            ts->text_cells_dirty[row * VGA_WIDTH + col] = 0u;
+        }
+    }
+}
+
 static void gfx_render_terminal_cell(gfx_window* window, u32 row, u32 col) {
     s32 session = terminal_session_from_window(window);
     terminal_state* ts = terminal_state_for_session(session >= 0 ? (u32)session : 0u);
@@ -2026,8 +2086,20 @@ void display_refresh(void) {
     }
 
     if (video_get_mode() == VIDEO_MODE_GRAPHICS) {
+        if (g_panic_mode) {
+            gfx_render_panic_full();
+            framebuffer_flush();
+            clear_visible_text_dirty();
+            terminal_force_full_redraw = 0u;
+            g_prev_cursor_valid = 0u;
+            return;
+        }
+
         if (process_manager_visible()) {
             update_process_usage_sample();
+        }
+        if (visible_terminal_count() > 1u) {
+            terminal_force_full_redraw = 1u;
         }
         if (terminal_force_full_redraw) {
             gfx_render_full();
@@ -2223,6 +2295,15 @@ void display_get_cursor(u32* row, u32* col) {
     }
     if (col) {
         *col = ts->cursor_col;
+    }
+}
+
+void display_get_viewport(u32* rows, u32* cols) {
+    if (rows) {
+        *rows = visible_rows();
+    }
+    if (cols) {
+        *cols = visible_cols();
     }
 }
 
@@ -2548,6 +2629,18 @@ s32 display_terminal_session_for_task(u32 task_id) {
 s32 display_get_focused_terminal_session(void) {
     ensure_valid_terminal_focus();
     return g_focused_terminal_session;
+}
+
+void display_set_panic_mode(u8 enabled) {
+    g_panic_mode = enabled ? 1u : 0u;
+    if (g_panic_mode) {
+        g_start_menu_open = 0u;
+        g_drag_window = -1;
+        g_resize_window = -1;
+        g_gfx_disable_overlay = 1u;
+        g_prev_cursor_valid = 0u;
+    }
+    terminal_force_full_redraw = 1u;
 }
 
 u8 display_get_graphics_test_overlay(void) {

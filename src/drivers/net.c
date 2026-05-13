@@ -71,6 +71,18 @@ typedef struct {
 } __attribute__((packed)) udp_header;
 
 typedef struct {
+    u16 src_port;
+    u16 dst_port;
+    u32 seq_num;
+    u32 ack_num;
+    u8 data_offset_reserved;
+    u8 flags;
+    u16 window;
+    u16 checksum;
+    u16 urgent_ptr;
+} __attribute__((packed)) tcp_header;
+
+typedef struct {
     u16 id;
     u16 flags;
     u16 qdcount;
@@ -142,6 +154,41 @@ static u8 dhcp_ip_buf[700];
 static u8 eth_tx_frame_buf[1600];
 static u8 dns_query_buf[512];
 static u8 udp_tx_buf[1600];
+static u8 tcp_tx_buf[1600];
+
+#define TCP_FLAG_FIN 0x01u
+#define TCP_FLAG_SYN 0x02u
+#define TCP_FLAG_RST 0x04u
+#define TCP_FLAG_PSH 0x08u
+#define TCP_FLAG_ACK 0x10u
+
+typedef struct {
+    u8 active;
+    u8 connecting;
+    u8 established;
+    u8 failed;
+    u8 fin_seen;
+    u8 header_done;
+    u8 body_truncated;
+    u8 status_valid;
+    u32 remote_ip;
+    u16 local_port;
+    u16 remote_port;
+    u32 seq_local;
+    u32 seq_remote;
+    u32 connect_sent_ticks;
+    u32 last_activity_ticks;
+    u32 body_written;
+    u32 body_total;
+    u16 status_code;
+    char* body_out;
+    u32 body_out_size;
+    u32 body_out_pos;
+    char header_buf[1024];
+    u32 header_len;
+} tcp_http_session;
+
+static tcp_http_session tcp_http;
 
 static void dbg_print(const char* s) {
 #if NET_DEBUG
@@ -232,6 +279,44 @@ static u16 checksum16(const void* data, u32 len) {
     return (u16)(~sum);
 }
 
+static u32 checksum32_add(u32 sum, const u8* data, u32 len) {
+    u32 i;
+
+    for (i = 0; i + 1u < len; i += 2u) {
+        sum += (u32)((data[i] << 8) | data[i + 1u]);
+    }
+    if (len & 1u) {
+        sum += (u32)(data[len - 1u] << 8);
+    }
+    return sum;
+}
+
+static u16 tcp_checksum(u32 src_ip, u32 dst_ip, const u8* tcp_seg, u32 tcp_len) {
+    u8 pseudo[12];
+    u32 sum = 0;
+
+    pseudo[0] = (u8)((src_ip >> 24) & 0xFFu);
+    pseudo[1] = (u8)((src_ip >> 16) & 0xFFu);
+    pseudo[2] = (u8)((src_ip >> 8) & 0xFFu);
+    pseudo[3] = (u8)(src_ip & 0xFFu);
+    pseudo[4] = (u8)((dst_ip >> 24) & 0xFFu);
+    pseudo[5] = (u8)((dst_ip >> 16) & 0xFFu);
+    pseudo[6] = (u8)((dst_ip >> 8) & 0xFFu);
+    pseudo[7] = (u8)(dst_ip & 0xFFu);
+    pseudo[8] = 0u;
+    pseudo[9] = IP_PROTO_TCP;
+    pseudo[10] = (u8)((tcp_len >> 8) & 0xFFu);
+    pseudo[11] = (u8)(tcp_len & 0xFFu);
+
+    sum = checksum32_add(sum, pseudo, sizeof(pseudo));
+    sum = checksum32_add(sum, tcp_seg, tcp_len);
+
+    while (sum >> 16) {
+        sum = (sum & 0xFFFFu) + (sum >> 16);
+    }
+    return (u16)(~sum);
+}
+
 static u8 parse_u32(const char* s, u32* value, u32* consumed) {
     u32 v = 0;
     u32 i = 0;
@@ -248,6 +333,125 @@ static u8 parse_u32(const char* s, u32* value, u32* consumed) {
     *value = v;
     *consumed = i;
     return 1;
+}
+
+static u8 parse_u16_any(const char* s, u16* out_value, u32* consumed) {
+    u32 v = 0;
+    u32 i = 0;
+
+    if (!s || s[0] < '0' || s[0] > '9') {
+        return 0;
+    }
+
+    while (s[i] >= '0' && s[i] <= '9') {
+        v = v * 10u + (u32)(s[i] - '0');
+        if (v > 65535u) {
+            return 0;
+        }
+        i++;
+    }
+
+    *out_value = (u16)v;
+    if (consumed) {
+        *consumed = i;
+    }
+    return 1;
+}
+
+static char ascii_lower(char c) {
+    if (c >= 'A' && c <= 'Z') {
+        return (char)(c + ('a' - 'A'));
+    }
+    return c;
+}
+
+static u8 starts_with_ci(const char* s, const char* prefix) {
+    u32 i = 0;
+    if (!s || !prefix) {
+        return 0;
+    }
+    while (prefix[i]) {
+        if (ascii_lower(s[i]) != ascii_lower(prefix[i])) {
+            return 0;
+        }
+        i++;
+    }
+    return 1;
+}
+
+static net_http_result parse_http_url(const char* url,
+                                      char* host_out,
+                                      u32 host_out_size,
+                                      u16* out_port,
+                                      const char** out_path) {
+    const char* p;
+    const char* host_start;
+    const char* scheme_sep = 0;
+    u32 host_len = 0;
+    u32 i;
+
+    if (!url || !host_out || host_out_size == 0u || !out_port || !out_path) {
+        return NET_HTTP_ERR_INVALID_ARG;
+    }
+
+    for (i = 0u; url[i]; i++) {
+        if (url[i] == ':' && url[i + 1u] == '/' && url[i + 2u] == '/') {
+            scheme_sep = &url[i];
+            break;
+        }
+    }
+
+    if (scheme_sep) {
+        if (starts_with_ci(url, "https://")) {
+            return NET_HTTP_ERR_UNSUPPORTED_SCHEME;
+        }
+        if (!starts_with_ci(url, "http://")) {
+            return NET_HTTP_ERR_UNSUPPORTED_SCHEME;
+        }
+        p = url + 7;
+    } else {
+        /* Bare-host format is accepted: host[:port][/path]. */
+        p = url;
+    }
+
+    host_start = p;
+    while (*p && *p != ':' && *p != '/') {
+        host_len++;
+        p++;
+    }
+
+    if (host_len == 0u || host_len + 1u > host_out_size) {
+        return NET_HTTP_ERR_BAD_URL;
+    }
+
+    for (i = 0u; i < host_len; i++) {
+        host_out[i] = host_start[i];
+    }
+    host_out[host_len] = '\0';
+
+    *out_port = 80u;
+    if (*p == ':') {
+        u16 port;
+        u32 consumed = 0u;
+        p++;
+        if (!parse_u16_any(p, &port, &consumed) || consumed == 0u) {
+            return NET_HTTP_ERR_BAD_URL;
+        }
+        *out_port = port;
+        p += consumed;
+    }
+
+    if (*p == '\0') {
+        *out_path = "/";
+        return NET_HTTP_OK;
+    }
+
+    if (*p != '/') {
+        return NET_HTTP_ERR_BAD_URL;
+    }
+
+    *out_path = p;
+    return NET_HTTP_OK;
 }
 
 u8 net_parse_ipv4(const char* text, u32* out_ip) {
@@ -453,6 +657,230 @@ static u8 send_udp_packet(u32 dst_ip, u16 src_port, u16 dst_port, const void* pa
 
     mem_copy(udp_tx_buf + sizeof(udp_header), payload, payload_len);
     return send_ipv4_packet(dst_ip, IP_PROTO_UDP, udp_tx_buf, (u16)(sizeof(udp_header) + payload_len), ident);
+}
+
+static u8 send_tcp_packet(u32 dst_ip,
+                          u16 src_port,
+                          u16 dst_port,
+                          u32 seq,
+                          u32 ack,
+                          u8 flags,
+                          const void* payload,
+                          u16 payload_len,
+                          u16 ident) {
+    tcp_header* tcp = (tcp_header*)tcp_tx_buf;
+    u32 seg_len;
+
+    if (sizeof(tcp_header) + payload_len > sizeof(tcp_tx_buf)) {
+        return 0;
+    }
+
+    tcp->src_port = htons(src_port);
+    tcp->dst_port = htons(dst_port);
+    tcp->seq_num = htonl(seq);
+    tcp->ack_num = htonl(ack);
+    tcp->data_offset_reserved = (u8)(5u << 4);
+    tcp->flags = flags;
+    tcp->window = htons(4096u);
+    tcp->checksum = 0u;
+    tcp->urgent_ptr = 0u;
+
+    if (payload_len > 0u) {
+        mem_copy(tcp_tx_buf + sizeof(tcp_header), payload, payload_len);
+    }
+
+    seg_len = sizeof(tcp_header) + payload_len;
+    tcp->checksum = htons(tcp_checksum(cfg.ip, dst_ip, tcp_tx_buf, seg_len));
+
+    return send_ipv4_packet(dst_ip, IP_PROTO_TCP, tcp_tx_buf, (u16)seg_len, ident);
+}
+
+static void tcp_http_reset(void) {
+    mem_set(&tcp_http, 0, sizeof(tcp_http));
+}
+
+static void tcp_http_parse_status_line(void) {
+    u32 i = 0u;
+
+    while (i < tcp_http.header_len && tcp_http.header_buf[i] != ' ') {
+        i++;
+    }
+    while (i < tcp_http.header_len && tcp_http.header_buf[i] == ' ') {
+        i++;
+    }
+
+    if (i + 2u < tcp_http.header_len &&
+        tcp_http.header_buf[i] >= '0' && tcp_http.header_buf[i] <= '9' &&
+        tcp_http.header_buf[i + 1u] >= '0' && tcp_http.header_buf[i + 1u] <= '9' &&
+        tcp_http.header_buf[i + 2u] >= '0' && tcp_http.header_buf[i + 2u] <= '9') {
+        tcp_http.status_code = (u16)((tcp_http.header_buf[i] - '0') * 100u +
+                                      (tcp_http.header_buf[i + 1u] - '0') * 10u +
+                                      (tcp_http.header_buf[i + 2u] - '0'));
+        tcp_http.status_valid = 1u;
+    }
+}
+
+static void tcp_http_append_body(const u8* data, u32 len) {
+    u32 i;
+
+    tcp_http.body_total += len;
+    for (i = 0u; i < len; i++) {
+        if (tcp_http.body_out && tcp_http.body_out_size > 0u &&
+            tcp_http.body_out_pos + 1u < tcp_http.body_out_size) {
+            char c = (char)data[i];
+            if ((u8)c < 32u && c != '\n' && c != '\r' && c != '\t') {
+                c = '.';
+            }
+            tcp_http.body_out[tcp_http.body_out_pos++] = c;
+        } else {
+            tcp_http.body_truncated = 1u;
+        }
+    }
+
+    if (tcp_http.body_out && tcp_http.body_out_size > 0u) {
+        tcp_http.body_out[tcp_http.body_out_pos] = '\0';
+    }
+}
+
+static void tcp_http_feed_data(const u8* data, u32 len) {
+    u32 i;
+
+    if (len == 0u) {
+        return;
+    }
+
+    if (!tcp_http.header_done) {
+        for (i = 0u; i < len; i++) {
+            if (tcp_http.header_len + 1u < sizeof(tcp_http.header_buf)) {
+                tcp_http.header_buf[tcp_http.header_len++] = (char)data[i];
+                tcp_http.header_buf[tcp_http.header_len] = '\0';
+            } else {
+                tcp_http.failed = 1u;
+                return;
+            }
+
+            if (tcp_http.header_len >= 4u) {
+                u32 n = tcp_http.header_len;
+                if (tcp_http.header_buf[n - 4u] == '\r' &&
+                    tcp_http.header_buf[n - 3u] == '\n' &&
+                    tcp_http.header_buf[n - 2u] == '\r' &&
+                    tcp_http.header_buf[n - 1u] == '\n') {
+                    tcp_http.header_done = 1u;
+                    tcp_http_parse_status_line();
+                    i++;
+                    break;
+                }
+            }
+        }
+
+        if (!tcp_http.header_done) {
+            return;
+        }
+
+        if (i < len) {
+            tcp_http_append_body(data + i, len - i);
+        }
+        return;
+    }
+
+    tcp_http_append_body(data, len);
+}
+
+static void handle_tcp(const ipv4_header* ip, const u8* payload, u32 len) {
+    const tcp_header* tcp;
+    u16 src_port;
+    u16 dst_port;
+    u32 seq;
+    u8 flags;
+    u32 data_offset;
+    u32 data_len;
+    const u8* data;
+
+    if (len < sizeof(tcp_header)) {
+        return;
+    }
+
+    tcp = (const tcp_header*)payload;
+    data_offset = (u32)((tcp->data_offset_reserved >> 4) & 0x0Fu) * 4u;
+    if (data_offset < sizeof(tcp_header) || data_offset > len) {
+        return;
+    }
+
+    src_port = ntohs(tcp->src_port);
+    dst_port = ntohs(tcp->dst_port);
+    seq = ntohl(tcp->seq_num);
+    flags = tcp->flags;
+    data = payload + data_offset;
+    data_len = len - data_offset;
+
+    if (!tcp_http.active) {
+        return;
+    }
+    if (ntohl(ip->src_ip) != tcp_http.remote_ip) {
+        return;
+    }
+    if (src_port != tcp_http.remote_port || dst_port != tcp_http.local_port) {
+        return;
+    }
+
+    tcp_http.last_activity_ticks = pit_get_ticks();
+
+    if (flags & TCP_FLAG_RST) {
+        tcp_http.failed = 1u;
+        return;
+    }
+
+    if (tcp_http.connecting && (flags & TCP_FLAG_SYN) && (flags & TCP_FLAG_ACK)) {
+        tcp_http.seq_remote = seq + 1u;
+        tcp_http.connecting = 0u;
+        tcp_http.established = 1u;
+        send_tcp_packet(tcp_http.remote_ip,
+                        tcp_http.local_port,
+                        tcp_http.remote_port,
+                        tcp_http.seq_local,
+                        tcp_http.seq_remote,
+                        TCP_FLAG_ACK,
+                        0,
+                        0u,
+                        (u16)(tcp_http.seq_local & 0xFFFFu));
+        return;
+    }
+
+    if (!tcp_http.established) {
+        return;
+    }
+
+    if (data_len > 0u) {
+        if (seq == tcp_http.seq_remote) {
+            tcp_http.seq_remote += data_len;
+            tcp_http_feed_data(data, data_len);
+            send_tcp_packet(tcp_http.remote_ip,
+                            tcp_http.local_port,
+                            tcp_http.remote_port,
+                            tcp_http.seq_local,
+                            tcp_http.seq_remote,
+                            TCP_FLAG_ACK,
+                            0,
+                            0u,
+                            (u16)(tcp_http.seq_local & 0xFFFFu));
+        }
+    }
+
+    if (flags & TCP_FLAG_FIN) {
+        if (seq + data_len == tcp_http.seq_remote) {
+            tcp_http.seq_remote++;
+        }
+        tcp_http.fin_seen = 1u;
+        send_tcp_packet(tcp_http.remote_ip,
+                        tcp_http.local_port,
+                        tcp_http.remote_port,
+                        tcp_http.seq_local,
+                        tcp_http.seq_remote,
+                        TCP_FLAG_ACK,
+                        0,
+                        0u,
+                        (u16)(tcp_http.seq_local & 0xFFFFu));
+    }
 }
 
 static u8 dns_encode_name(const char* host, u8* out, u32 out_size, u32* out_len) {
@@ -822,7 +1250,7 @@ static void handle_ipv4(const u8* payload, u32 len) {
     } else if (ip->proto == IP_PROTO_UDP) {
         handle_udp(ip, payload + ihl, total_len - ihl);
     } else if (ip->proto == IP_PROTO_TCP) {
-        /* TCP basic parsing placeholder: frame is recognized and ignored. */
+        handle_tcp(ip, payload + ihl, total_len - ihl);
     }
 }
 
@@ -893,6 +1321,7 @@ void net_init(void) {
     mem_set(&ping_state, 0, sizeof(ping_state));
     mem_set(&dhcp_state, 0, sizeof(dhcp_state));
     mem_set(&dns_state, 0, sizeof(dns_state));
+    tcp_http_reset();
 
     if (!rtl8139_init(net_on_frame)) {
         cfg.link_up = 0;
@@ -1245,4 +1674,235 @@ u8 net_resolve_ipv4(const char* host, u32 timeout_ms, u32* out_ip) {
 
     *out_ip = dns_state.result_ip;
     return 1;
+}
+
+net_http_result net_http_get(const char* url,
+                             u32 timeout_ms,
+                             char* body_out,
+                             u32 body_out_size,
+                             net_http_response* out_response) {
+    char host[128];
+    const char* path;
+    u16 port = 80u;
+    net_http_result parsed;
+    u32 ip = 0u;
+    u32 timeout_ticks;
+    u32 start;
+    u32 now;
+    u32 retries = 0u;
+    u16 local_port;
+    char request[384];
+    u32 req_len = 0u;
+    const char* host_hdr;
+    const char* p;
+
+    if (!out_response || !url || timeout_ms == 0u) {
+        return NET_HTTP_ERR_INVALID_ARG;
+    }
+
+    mem_set(out_response, 0, sizeof(*out_response));
+
+    parsed = parse_http_url(url, host, sizeof(host), &port, &path);
+    if (parsed != NET_HTTP_OK) {
+        out_response->result = parsed;
+        return parsed;
+    }
+
+    if (!cfg.link_up) {
+        out_response->result = NET_HTTP_ERR_LINK_DOWN;
+        return out_response->result;
+    }
+
+    if (cfg.ip == 0u) {
+        out_response->result = NET_HTTP_ERR_NO_IP;
+        return out_response->result;
+    }
+
+    if (!net_resolve_ipv4(host, timeout_ms, &ip)) {
+        out_response->result = NET_HTTP_ERR_DNS_FAILED;
+        return out_response->result;
+    }
+
+    out_response->resolved_ip = ip;
+    out_response->port = port;
+
+    if (body_out && body_out_size > 0u) {
+        body_out[0] = '\0';
+    }
+
+    timeout_ticks = (timeout_ms * pit_get_frequency()) / 1000u;
+    if (timeout_ticks == 0u) {
+        timeout_ticks = 1u;
+    }
+
+    tcp_http_reset();
+    local_port = (u16)(49152u + (pit_get_ticks() & 0x3FFFu));
+
+    tcp_http.active = 1u;
+    tcp_http.connecting = 1u;
+    tcp_http.remote_ip = ip;
+    tcp_http.local_port = local_port;
+    tcp_http.remote_port = port;
+    tcp_http.seq_local = 0x13570000u ^ pit_get_ticks();
+    tcp_http.body_out = body_out;
+    tcp_http.body_out_size = body_out_size;
+    tcp_http.last_activity_ticks = pit_get_ticks();
+
+    if (!send_tcp_packet(ip,
+                         local_port,
+                         port,
+                         tcp_http.seq_local,
+                         0u,
+                         TCP_FLAG_SYN,
+                         0,
+                         0u,
+                         (u16)(tcp_http.seq_local & 0xFFFFu))) {
+        out_response->result = NET_HTTP_ERR_TIMEOUT;
+        tcp_http_reset();
+        return out_response->result;
+    }
+
+    tcp_http.seq_local++;
+    tcp_http.connect_sent_ticks = pit_get_ticks();
+    start = pit_get_ticks();
+    while ((pit_get_ticks() - start) < timeout_ticks) {
+        net_poll();
+        if (tcp_http.established) {
+            break;
+        }
+        if (tcp_http.failed) {
+            out_response->result = NET_HTTP_ERR_PROTOCOL;
+            tcp_http_reset();
+            return out_response->result;
+        }
+        now = pit_get_ticks();
+        if (!tcp_http.established && retries < 3u &&
+            (now - tcp_http.connect_sent_ticks) > (pit_get_frequency() / 2u)) {
+            if (send_tcp_packet(ip,
+                                local_port,
+                                port,
+                                tcp_http.seq_local - 1u,
+                                0u,
+                                TCP_FLAG_SYN,
+                                0,
+                                0u,
+                                (u16)((tcp_http.seq_local - 1u) & 0xFFFFu))) {
+                tcp_http.connect_sent_ticks = now;
+                retries++;
+            }
+        }
+    }
+
+    if (!tcp_http.established) {
+        out_response->result = NET_HTTP_ERR_TIMEOUT;
+        tcp_http_reset();
+        return out_response->result;
+    }
+
+    host_hdr = host;
+    p = "GET ";
+    while (*p && req_len + 1u < sizeof(request)) request[req_len++] = *p++;
+    p = path;
+    while (*p && req_len + 1u < sizeof(request)) request[req_len++] = *p++;
+    p = " HTTP/1.1\r\nHost: ";
+    while (*p && req_len + 1u < sizeof(request)) request[req_len++] = *p++;
+    p = host_hdr;
+    while (*p && req_len + 1u < sizeof(request)) request[req_len++] = *p++;
+    if (port != 80u) {
+        char port_buf[8];
+        u32 n = 0u;
+        u32 v = port;
+        char rev[8];
+        if (v == 0u) {
+            port_buf[n++] = '0';
+        } else {
+            while (v > 0u && n < sizeof(rev)) {
+                rev[n++] = (char)('0' + (v % 10u));
+                v /= 10u;
+            }
+            {
+                u32 j;
+                for (j = 0u; j < n; j++) {
+                    port_buf[j] = rev[n - 1u - j];
+                }
+            }
+        }
+        p = ":";
+        while (*p && req_len + 1u < sizeof(request)) request[req_len++] = *p++;
+        {
+            u32 j;
+            for (j = 0u; j < n && req_len + 1u < sizeof(request); j++) {
+                request[req_len++] = port_buf[j];
+            }
+        }
+    }
+    p = "\r\nConnection: close\r\nUser-Agent: VertexOS/0.1\r\n\r\n";
+    while (*p && req_len + 1u < sizeof(request)) request[req_len++] = *p++;
+
+    if (req_len == 0u || req_len + 1u >= sizeof(request)) {
+        out_response->result = NET_HTTP_ERR_PROTOCOL;
+        tcp_http_reset();
+        return out_response->result;
+    }
+    request[req_len] = '\0';
+
+    if (!send_tcp_packet(ip,
+                         local_port,
+                         port,
+                         tcp_http.seq_local,
+                         tcp_http.seq_remote,
+                         TCP_FLAG_ACK | TCP_FLAG_PSH,
+                         request,
+                         (u16)req_len,
+                         (u16)(tcp_http.seq_local & 0xFFFFu))) {
+        out_response->result = NET_HTTP_ERR_TIMEOUT;
+        tcp_http_reset();
+        return out_response->result;
+    }
+    tcp_http.seq_local += req_len;
+
+    start = pit_get_ticks();
+    while ((pit_get_ticks() - start) < timeout_ticks) {
+        net_poll();
+        if (tcp_http.failed) {
+            out_response->result = NET_HTTP_ERR_PROTOCOL;
+            tcp_http_reset();
+            return out_response->result;
+        }
+        if (tcp_http.fin_seen) {
+            break;
+        }
+    }
+
+    if (!tcp_http.header_done) {
+        out_response->result = NET_HTTP_ERR_TIMEOUT;
+        tcp_http_reset();
+        return out_response->result;
+    }
+    if (!tcp_http.status_valid) {
+        out_response->result = NET_HTTP_ERR_PROTOCOL;
+        tcp_http_reset();
+        return out_response->result;
+    }
+
+    out_response->status_code = tcp_http.status_code;
+    out_response->body_len = tcp_http.body_total;
+    out_response->body_truncated = tcp_http.body_truncated;
+    out_response->result = NET_HTTP_OK;
+
+    if (tcp_http.established) {
+        send_tcp_packet(ip,
+                        local_port,
+                        port,
+                        tcp_http.seq_local,
+                        tcp_http.seq_remote,
+                        TCP_FLAG_FIN | TCP_FLAG_ACK,
+                        0,
+                        0u,
+                        (u16)(tcp_http.seq_local & 0xFFFFu));
+        tcp_http.seq_local++;
+    }
+
+    tcp_http_reset();
+    return out_response->result;
 }
