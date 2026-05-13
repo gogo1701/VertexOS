@@ -525,6 +525,29 @@ static u32 gfx_settings_swatch_height(void) {
     return gfx_scale_px(SETTINGS_SWATCH_H);
 }
 
+static void settings_scale_slider_rect(const gfx_window* window,
+                                       s32* out_x, s32* out_y,
+                                       u32* out_w, u32* out_h) {
+    u32 title_h = gfx_window_title_height();
+    u32 margin  = gfx_scale_px(10u);
+    u32 min_w   = gfx_scale_px(48u);
+    s32 x, y;
+    u32 w, h;
+
+    if (!window || !out_x || !out_y || !out_w || !out_h) { return; }
+
+    x = window->x + (s32)margin;
+    y = window->y + (s32)title_h + (s32)gfx_scale_px(52u);
+    w = (window->w > 2u * margin) ? window->w - 2u * margin : min_w;
+    if (w < min_w) { w = min_w; }
+    h = gfx_scale_px(6u);
+    if (h == 0u) { h = 1u; }
+    if ((u32)(y - window->y) + h + gfx_scale_px(22u) > window->h) {
+        y = window->y + (s32)title_h + (s32)gfx_scale_px(40u);
+    }
+    *out_x = x; *out_y = y; *out_w = w; *out_h = h;
+}
+
 static u32 gfx_window_role_min_width(gui_window_role role) {
     if (role == GUI_WINDOW_ROLE_SETTINGS) {
         return gfx_scale_px(118u);
