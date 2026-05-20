@@ -1,3 +1,18 @@
+# VertexOS is getting sunsetted. We are continuing with a new project!
+
+Hi everyone,
+
+With regret, we are announcing the end of support for VertexOS.
+
+Despite its short lifespan, we feel the project has been moving too fast. Many features were rapidly implemented, and as a result, we are unable to guarantee the level of security, stability, and optimization we aim for.
+
+However, we are continuing our work on a new operating system that will be developed more carefully and at a slower pace, with a stronger focus on quality. We believe it will be worth the wait.
+
+If you would like to check it out, you can find it here:
+https://github.com/Retr0Aa/PrismOS
+
+**THANK YOU ALL!**
+
 # VertexOS
 
 A modular 32-bit x86 operating system focused on practical learning and rapid iteration.
